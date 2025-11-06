@@ -1,0 +1,38 @@
+# ---------------------------
+# Python cache & bytecode
+# ---------------------------
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+
+# ---------------------------
+# Virtual environments
+# ---------------------------
+venv/
+env/
+.venv/
+
+# ---------------------------
+# Jupyter notebooks
+# ---------------------------
+.ipynb_checkpoints/
+
+# ---------------------------
+# Streamlit cache
+# ---------------------------
+.streamlit/
+
+# ---------------------------
+# Operating system files
+# ---------------------------
+.DS_Store
+Thumbs.db
+
+# ---------------------------
+# VS Code / IDE settings
+# ---------------------------
+.vscode/
+.idea/
