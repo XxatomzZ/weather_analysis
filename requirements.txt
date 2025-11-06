@@ -1,0 +1,18 @@
+# Streamlit web app
+streamlit==1.31.0
+
+# Data handling
+pandas==2.2.0
+numpy==1.26.0
+
+# Plotting
+matplotlib==3.9.1
+
+# API requests
+requests==2.32.0
+
+# Meteostat for weather data
+meteostat==3.1.1
+
+# Optional: for timezone handling (Meteostat dependency)
+pytz==2025.7
