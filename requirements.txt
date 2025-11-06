@@ -1,7 +1,7 @@
-streamlit==1.31.0
+streamlit==1.39.0
 pandas==2.2.0
 numpy==1.26.0
-matplotlib==3.9.1
-requests==2.32.0
-meteostat==3.1.1
-pytz==2025.7
+matplotlib
+requests==2.32.3
+meteostat==1.7.6
+pytz
