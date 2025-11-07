@@ -80,43 +80,63 @@ def get_weather_data(postcode, years):
 
 
 # --- Streamlit UI ---
-st.title("Ten-Year Monthly Weather Averages")
-st.markdown("Enter a UK postcode to view the ten-year average weather trends.")
-
-postcode = st.text_input("Enter postcode:", " ")
-
-years = st.selectbox(
-    "Select number of years to analyse:",
-    options=[5, 10, 15, 20],
-    index=1  # default = 10
+st.set_page_config(
+    page_title="UK Weather Analysis",   # Title shown in browser tab
+    page_icon="🌦️",                    # Emoji or image path (favicon)
+    layout="wide",                      # 'centered' or 'wide'
+    initial_sidebar_state="expanded"    # 'expanded' or 'collapsed'
 )
 
+st.title("UK Weather Pattern Analysis")
+st.subheader("Analyse average monthly weather by postcode")
+st.markdown("---")  # Horizontal divider line
+st.caption("Data from Meteostat (2005–2025)")
 
-if st.button("Generate Plots"):
+tab1, tab2 = st.tabs(["Charts", "Data Table"])
+
+st.sidebar.header("Settings ⚙️")
+postcode = st.sidebar.text_input("Enter a UK Postcode", "SW1A 1AA")
+years = st.sidebar.selectbox("Select number of years", [5, 10, 15, 20], index=1)
+if st.sidebar.button("Run Analysis"):
+    st.session_state['run'] = True
     monthly_means, fig, buf = get_weather_data(postcode, years)
     if monthly_means is not None:
-        st.subheader("Monthly Averages ({years}-Year Period)")
-        st.dataframe(monthly_means.round(2))
+        with tab2:
+            st.dataframe(monthly_means.round(2))
 
-        # download csv of data
-        csv = monthly_means.to_csv().encode('utf-8')
-        st.download_button(
-            label="Download Monthly Averages as CSV file",
-            data=csv,
-            file_name=f"weather_summary_{postcode}.csv",
-            mime="text/csv"
-        )
+            # download csv of data
+            csv = monthly_means.to_csv().encode('utf-8')
+            st.download_button(
+                label="Download Monthly Averages as CSV file",
+                data=csv,
+                file_name=f"weather_summary_{postcode}.csv",
+                mime="text/csv"
+            )
 
-        st.pyplot(fig)
+        with tab1:
+            st.pyplot(fig)
 
-        # download png of plots
-        st.download_button(
-            label="Download Weather Plots as PNG",
-            data=buf,
-            file_name=f"weather_plots_{postcode}.png",
-            mime="image/png"
-        )
+            # download png of plots
+            st.download_button(
+                label="Download Weather Plots as PNG",
+                data=buf,
+                file_name=f"weather_plots_{postcode}.png",
+                mime="image/png"
+            )
 
+
+with st.sidebar.expander("Advanced Options"):
+    show_trends = st.checkbox("Show trend lines")
+
+st.markdown(
+    """
+    <hr>
+    <p style='text-align: center; font-size: 14px; color: grey;'>
+    © 2025 Climate Analytics Co. | Data sourced via Meteostat API
+    </p>
+    """,
+    unsafe_allow_html=True
+)
 
 
 

@@ -23,7 +23,7 @@ env/
 # ---------------------------
 # Streamlit cache
 # ---------------------------
-.streamlit/
+#.streamlit/
 
 # ---------------------------
 # Operating system files

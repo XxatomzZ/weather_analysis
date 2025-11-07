@@ -1,0 +1,17 @@
+[theme]
+primaryColor = "#7F8C8D"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F2F2F2"
+textColor = "#2C3E50"
+font = "sans serif"
+
+[layout]
+layout = "wide"
+
+[server]
+headless = true
+enableCORS = false
+enableXsrfProtection = true
+
+[client]
+toolbarMode = "minimal"          # Hides developer toolbar
