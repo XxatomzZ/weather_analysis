@@ -5,6 +5,7 @@ from meteostat import Point, Daily
 import pandas as pd
 import requests
 import io
+import re
 
 
 # --- Define Function ---
@@ -95,11 +96,17 @@ st.caption("Data from Meteostat (2005–2025)")
 tab1, tab2 = st.tabs(["Charts", "Data Table"])
 
 st.sidebar.header("Settings ⚙️")
-postcode = st.sidebar.text_input("Enter a UK Postcode", "SW1A 1AA")
+postcode = st.sidebar.text_input("Enter a UK Postcode", "---- ---")
+if postcode:
+    if not re.match(r"^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$", postcode, re.I):
+        st.error("Invalid UK postcode")
+
 years = st.sidebar.selectbox("Select number of years", [5, 10, 15, 20], index=1)
 if st.sidebar.button("Run Analysis"):
     st.session_state['run'] = True
-    monthly_means, fig, buf = get_weather_data(postcode, years)
+    with st.spinner("Fetching and processing weather data... ⏳"):
+        monthly_means, fig, buf = get_weather_data(postcode, years)
+        
     if monthly_means is not None:
         with tab2:
             st.dataframe(monthly_means.round(2))
