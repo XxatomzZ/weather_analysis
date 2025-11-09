@@ -1,8 +1,10 @@
 import streamlit as st
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
+import plotly.express as px
 from datetime import datetime
 from meteostat import Point, Daily
 import pandas as pd
+import kaleido
 import requests
 import io
 import re
@@ -43,7 +45,7 @@ def get_weather_data(postcode, years):
         1:'Jan', 2:'Feb', 3:'Mar', 4:'Apr', 5:'May', 6:'Jun',
         7:'Jul', 8:'Aug', 9:'Sep', 10:'Oct', 11:'Nov', 12:'Dec'
     })
-
+    '''
     # Create figure (3x2 grid)
     fig, axes = plt.subplots(3, 2, figsize=(12, 10))
     axes = axes.flatten()
@@ -77,8 +79,54 @@ def get_weather_data(postcode, years):
     fig.savefig(buf, format='png', dpi=300, bbox_inches='tight')
     buf.seek(0)
     return monthly_means, fig, buf
+    '''
 
+    # --- Create interactive Plotly figure ---
+    plot_vars = {
+        'tavg': 'Average Temperature (°C)',
+        'tmin': 'Minimum Temperature (°C)',
+        'tmax': 'Maximum Temperature (°C)',
+        'prcp': 'Precipitation (mm)',
+        'pres': 'Pressure (hPa)',
+        'wspd': 'Wind Speed (km/h)'
+    }
 
+    # Filter available columns only
+    available_vars = {k: v for k, v in plot_vars.items() if k in monthly_means.columns}
+
+    # Convert to long format for Plotly
+    data_long = monthly_means.reset_index().melt(id_vars='month',
+                                             value_vars=list(available_vars.keys()),
+                                             var_name='Variable',
+                                             value_name='Value')
+
+    # Map friendly labels
+    data_long['Variable'] = data_long['Variable'].map(available_vars)
+
+    # Create interactive line plot
+    fig = px.line(
+        data_long,
+        x='month',
+        y='Value',
+        color='Variable',
+        markers=True,
+        title=f"Monthly Weather Averages for {postcode.upper()} ({years} Years)",
+        template='plotly_white'
+    )
+
+    fig.update_layout(
+        xaxis_title="Month",
+        yaxis_title="Value",
+        legend_title="Variable",
+        font=dict(size=14),
+        hovermode='x unified',
+        title_x=0.5
+    )
+
+    buf = io.BytesIO()
+    fig.write_image(buf, format='png')
+    buf.seek(0)
+    return monthly_means, fig, buf
 
 # --- Streamlit UI ---
 st.set_page_config(
@@ -101,12 +149,20 @@ if postcode:
     if not re.match(r"^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$", postcode, re.I):
         st.error("Invalid UK postcode")
 
-years = st.sidebar.selectbox("Select number of years", [5, 10, 15, 20], index=1)
+years = st.sidebar.slider(
+    "Years of historical data to analyse",
+    min_value=1,
+    max_value=20,
+    value=10,
+    step=1,
+    help="Select how many past years of data to include (1–20 years)"
+)
+
 if st.sidebar.button("Run Analysis"):
     st.session_state['run'] = True
-    with st.spinner("Fetching and processing weather data... ⏳"):
+    with st.spinner("Fetching and processing weather data..."):
         monthly_means, fig, buf = get_weather_data(postcode, years)
-        
+
     if monthly_means is not None:
         with tab2:
             st.dataframe(monthly_means.round(2))
@@ -121,7 +177,7 @@ if st.sidebar.button("Run Analysis"):
             )
 
         with tab1:
-            st.pyplot(fig)
+            st.plotly_chart(fig, use_container_width=True)
 
             # download png of plots
             st.download_button(
@@ -146,5 +202,5 @@ st.markdown(
 )
 
 
-
+#   cd /Users/cam/Documents/python/weather_app
 #   streamlit run avg_weather_app.py
