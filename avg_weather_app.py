@@ -227,7 +227,7 @@ if st.sidebar.button("Run Analysis"):
                     'modeBarButtonsToAdd': ['downloadImage'],  # <-- browser-based PNG download
                 }
             )
-            st.info("You can download the plot as PNG directly from the chart's toolbar.")
+            st.info("You can download the plot as a PNG directly from the chart's toolbar.")
 
 st.markdown(
     """
