@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 from meteostat import Point, Daily
 import pandas as pd
-import kaleido
+#import kaleido
 import requests
 import io
 import re
@@ -143,15 +143,6 @@ def get_weather_data(postcode, years, show_trends=False):
         if not show_trends:
             individual_figs[var].update_traces(mode="markers")  # override line if needed
 
-    # Export main figure to PNG buffer safely
-    buf = None
-    try:
-        buf = io.BytesIO()
-        fig.write_image(buf, format='png')
-        buf.seek(0)
-    except RuntimeError as e:
-        st.warning("PNG export unavailable (Kaleido/Chrome not installed). You can still view plots interactively.")
-        buf = None
 
 
     # Return all data and figures
@@ -228,16 +219,15 @@ if st.sidebar.button("Run Analysis"):
             )
 
         with tab1:
-            st.plotly_chart(fig, use_container_width=True)
-            if buf is not None:
-                st.download_button(
-                    label="Download Weather Plots as PNG",
-                    data=buf,
-                    file_name=f"weather_plots_{postcode}.png",
-                    mime="image/png"
-                )
-            else:
-                st.info("PNG download is unavailable because Kaleido/Chrome is not installed.")
+            st.plotly_chart(
+                fig,
+                use_container_width=True,
+                config={
+                    'displayModeBar': True,
+                    'modeBarButtonsToAdd': ['downloadImage'],  # <-- browser-based PNG download
+                }
+            )
+            st.info("You can download the plot as PNG directly from the chart's toolbar.")
 
 st.markdown(
     """
