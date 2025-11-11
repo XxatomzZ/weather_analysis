@@ -1,6 +1,8 @@
 import streamlit as st
 #import matplotlib.pyplot as plt
 import plotly.express as px
+from plotly.subplots import make_subplots
+import plotly.graph_objects as go
 from datetime import datetime
 from meteostat import Point, Daily
 import pandas as pd
@@ -11,7 +13,7 @@ import re
 
 
 # --- Define Function ---
-def get_weather_data(postcode, years):
+def get_weather_data(postcode, years, show_trends=False):
     # Fetch coordinates
     res = requests.get(f"https://api.postcodes.io/postcodes/{postcode}")
     if res.status_code != 200 or res.json()['status'] != 200:
@@ -45,54 +47,111 @@ def get_weather_data(postcode, years):
         1:'Jan', 2:'Feb', 3:'Mar', 4:'Apr', 5:'May', 6:'Jun',
         7:'Jul', 8:'Aug', 9:'Sep', 10:'Oct', 11:'Nov', 12:'Dec'
     })
+    # Add number of days in each month (non-leap year assumption)
+    days_in_month = {
+        'Jan': 31, 'Feb': 28, 'Mar': 31, 'Apr': 30,
+        'May': 31, 'Jun': 30, 'Jul': 31, 'Aug': 31,
+        'Sep': 30, 'Oct': 31, 'Nov': 30, 'Dec': 31
+    }
 
+    # Calculate average daily sunshine (hours per day)
+    if 'tsun' in monthly_means.columns:
+        monthly_means['tsun_daily'] = [
+            monthly_means.loc[m, 'tsun'] / days_in_month[m] for m in monthly_means.index
+        ]
+    if 'tsun' in monthly_means.columns:
+        monthly_means = monthly_means.drop(columns=['tsun'])
 
-    # --- Create interactive Plotly figure ---
+    # --- Create combined and individual interactive plots ---
     plot_vars = {
         'tavg': 'Average Temperature (°C)',
         'tmin': 'Minimum Temperature (°C)',
         'tmax': 'Maximum Temperature (°C)',
         'prcp': 'Precipitation (mm)',
-        'tsun': 'Sunshine Duration (hr)',
+        'tsun_daily': 'Average Daily Sunshine (hr/day)',
         'wspd': 'Wind Speed (km/h)'
     }
 
-    # Filter available columns only
+    # Filter only available variables
     available_vars = {k: v for k, v in plot_vars.items() if k in monthly_means.columns}
 
-    # Convert to long format for Plotly
-    data_long = monthly_means.reset_index().melt(id_vars='month',
-                                             value_vars=list(available_vars.keys()),
-                                             var_name='Variable',
-                                             value_name='Value')
+    # Create combined grid layout
+    fig = make_subplots(rows=3, cols=2, subplot_titles=list(available_vars.values()))
+    row_col_map = {
+        0: (1, 1), 1: (1, 2),
+        2: (2, 1), 3: (2, 2),
+        4: (3, 1), 5: (3, 2)
+    }
 
-    # Map friendly labels
-    data_long['Variable'] = data_long['Variable'].map(available_vars)
+    # Color map for variables
+    color_map = {
+        'tavg': 'green',
+        'tmax': 'red',
+        'tmin': 'lightblue',
+        'prcp': 'blue',
+        'tsun_daily': 'orange',
+        'wspd': 'grey'
+    }
 
-    # Create interactive line plot
-    fig = px.line(
-        data_long,
-        x='month',
-        y='Value',
-        color='Variable',
-        markers=True,
-        title=f"Monthly Weather Averages for {postcode.upper()} ({years} Years)",
-        template='plotly_white'
-    )
+    mode_type = "lines+markers" if show_trends else "markers"
+    for i, (col, label) in enumerate(available_vars.items()):
+        fig.add_trace(
+            go.Scatter(
+                x=monthly_means.index,
+                y=monthly_means[col],
+                mode=mode_type,  # ← use show_trends
+                name=label,
+                line=dict(color=color_map[col]),
+                hovertemplate = '%{x}<br>%{y:.2f}'       # <-- rounds y to 2 decimals
+            ),
+            row=row_col_map[i][0],
+            col=row_col_map[i][1]
+        )
 
     fig.update_layout(
-        xaxis_title="Month",
-        yaxis_title="Value",
-        legend_title="Variable",
-        font=dict(size=14),
-        hovermode='x unified',
-        title_x=0.5
+        height=800,
+        width=1000,
+        title_text=f"Average Monthly Weather Overview for {postcode.upper()} ({years} Years)",
+        template="plotly_white",
+        showlegend=False
     )
 
+    # --- Create individual plots for each variable ---
+    individual_figs = {}
+    for var, label in available_vars.items():
+        individual_figs[var] = px.line(
+            monthly_means,
+            x=monthly_means.index,
+            y=var,
+            title=f"{label} ({postcode.upper()})",
+            template='plotly_white',
+            color_discrete_sequence=[color_map[var]]  # <-- set the color
+        )
+
+        # Adjust markers/lines based on show_trends
+        if show_trends:
+            individual_figs[var].update_traces(
+                mode="lines+markers",
+                hovertemplate='%{x}<br>%{y:.2f}'  # <-- rounds y to 2 decimals
+            )
+        else:
+            individual_figs[var].update_traces(
+                mode="markers",
+                hovertemplate = '%{x}<br>%{y:.2f}'  # <-- rounds y to 2 decimals
+            )
+
+        if not show_trends:
+            individual_figs[var].update_traces(mode="markers")  # override line if needed
+
+
+    # Export main figure to PNG buffer
     buf = io.BytesIO()
     fig.write_image(buf, format='png')
     buf.seek(0)
-    return monthly_means, fig, buf
+
+    # Return all data and figures
+    return monthly_means, fig, buf, plot_vars, individual_figs
+
 
 # --- Streamlit UI ---
 st.set_page_config(
@@ -110,6 +169,7 @@ st.caption("Data from Meteostat (2005–2025)")
 tab1, tab2 = st.tabs(["Charts", "Data Table"])
 
 st.sidebar.header("Settings ⚙️")
+
 postcode = st.sidebar.text_input("Enter a UK Postcode", "---- ---")
 if postcode:
     if not re.match(r"^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$", postcode, re.I):
@@ -124,14 +184,34 @@ years = st.sidebar.slider(
     help="Select how many past years of data to include (1–20 years)"
 )
 
+with st.sidebar.expander("Advanced Options"):
+    show_trends = st.checkbox("Show trend lines", value=True)
+
+
 if st.sidebar.button("Run Analysis"):
     st.session_state['run'] = True
     with st.spinner("Fetching and processing weather data..."):
-        monthly_means, fig, buf = get_weather_data(postcode, years)
+        monthly_means, fig, buf, plot_vars, individual_figs = get_weather_data(postcode, years, show_trends)
 
     if monthly_means is not None:
         with tab2:
-            st.dataframe(monthly_means.round(2))
+            # Remove unused columns
+            columns_to_drop = ['snow', 'wdir', 'wpgt', 'pres']
+            monthly_means = monthly_means.drop(columns=[c for c in columns_to_drop if c in monthly_means.columns])
+
+            # Rename table headers before displaying
+            readable_columns = {
+                'tavg': 'Average Temperature (°C)',
+                'tmin': 'Minimum Temperature (°C)',
+                'tmax': 'Maximum Temperature (°C)',
+                'prcp': 'Precipitation (mm)',
+                'tsun_daily': 'Average Daily Sunshine (hr/day)',
+                'wspd': 'Wind Speed (km/h)'
+            }
+
+            display_df = monthly_means.rename(columns=readable_columns)
+            st.dataframe(display_df.round(2))
+
 
             # download csv of data
             csv = monthly_means.to_csv().encode('utf-8')
@@ -144,7 +224,6 @@ if st.sidebar.button("Run Analysis"):
 
         with tab1:
             st.plotly_chart(fig, use_container_width=True)
-
             # download png of plots
             st.download_button(
                 label="Download Weather Plots as PNG",
@@ -154,14 +233,11 @@ if st.sidebar.button("Run Analysis"):
             )
 
 
-with st.sidebar.expander("Advanced Options"):
-    show_trends = st.checkbox("Show trend lines")
-
 st.markdown(
     """
     <hr>
     <p style='text-align: center; font-size: 14px; color: grey;'>
-    © 2025 Climate Analytics Co. | Data sourced via Meteostat API
+    © 2025 | Data sourced via Meteostat API
     </p>
     """,
     unsafe_allow_html=True
