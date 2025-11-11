@@ -45,41 +45,7 @@ def get_weather_data(postcode, years):
         1:'Jan', 2:'Feb', 3:'Mar', 4:'Apr', 5:'May', 6:'Jun',
         7:'Jul', 8:'Aug', 9:'Sep', 10:'Oct', 11:'Nov', 12:'Dec'
     })
-    '''
-    # Create figure (3x2 grid)
-    fig, axes = plt.subplots(3, 2, figsize=(12, 10))
-    axes = axes.flatten()
 
-    plot_vars = {
-        'tavg': 'Average Temperature (°C)',
-        'tmin': 'Minimum Temperature (°C)',
-        'tmax': 'Maximum Temperature (°C)',
-        'prcp': 'Precipitation (mm)',
-        'pres': 'Pressure (hPa)',
-        'wspd': 'Wind Speed (km/h)'
-    }
-
-    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#17becf', '#9467bd', '#8c564b']
-
-    for ax, (col, label), color in zip(axes, plot_vars.items(), colors):
-        if col in monthly_means.columns:
-            ax.plot(monthly_means.index, monthly_means[col],
-                    color=color, marker='o', linestyle='-', linewidth=2)
-            ax.set_title(label)
-            ax.set_xlabel('Month')
-            ax.grid(True, linestyle='--', alpha=0.6)
-        else:
-            ax.text(0.5, 0.5, f"No data for {label}",
-                    ha='center', va='center')
-            ax.set_axis_off()
-
-    plt.tight_layout()
-
-    buf = io.BytesIO()
-    fig.savefig(buf, format='png', dpi=300, bbox_inches='tight')
-    buf.seek(0)
-    return monthly_means, fig, buf
-    '''
 
     # --- Create interactive Plotly figure ---
     plot_vars = {
@@ -87,7 +53,7 @@ def get_weather_data(postcode, years):
         'tmin': 'Minimum Temperature (°C)',
         'tmax': 'Maximum Temperature (°C)',
         'prcp': 'Precipitation (mm)',
-        'pres': 'Pressure (hPa)',
+        'tsun': 'Sunshine Duration (hr)',
         'wspd': 'Wind Speed (km/h)'
     }
 
