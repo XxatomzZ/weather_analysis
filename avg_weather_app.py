@@ -146,7 +146,7 @@ def get_weather_data(postcode, years, show_trends=False):
 
 
     # Return all data and figures
-    return monthly_means, fig, buf, plot_vars, individual_figs
+    return monthly_means, fig, plot_vars, individual_figs
 
 
 # --- Streamlit UI ---
@@ -187,7 +187,7 @@ with st.sidebar.expander("Advanced Options"):
 if st.sidebar.button("Run Analysis"):
     st.session_state['run'] = True
     with st.spinner("Fetching and processing weather data..."):
-        monthly_means, fig, buf, plot_vars, individual_figs = get_weather_data(postcode, years, show_trends)
+        monthly_means, fig, plot_vars, individual_figs = get_weather_data(postcode, years, show_trends)
 
     if monthly_means is not None:
         with tab2:
