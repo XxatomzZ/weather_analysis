@@ -13,7 +13,7 @@ import re
 
 
 # --- Define Function ---
-def get_weather_data(postcode, years, show_trends=False):
+def get_weather_data(postcode, years, show_trends=False, show_errorbars=False):
     # Fetch coordinates
     res = requests.get(f"https://api.postcodes.io/postcodes/{postcode}")
     if res.status_code != 200 or res.json()['status'] != 200:
@@ -47,6 +47,38 @@ def get_weather_data(postcode, years, show_trends=False):
         1:'Jan', 2:'Feb', 3:'Mar', 4:'Apr', 5:'May', 6:'Jun',
         7:'Jul', 8:'Aug', 9:'Sep', 10:'Oct', 11:'Nov', 12:'Dec'
     })
+
+    # --- Compute monthly extremes for error bars (if requested) ---
+    monthly_max = None
+    monthly_min = None
+    # We'll take tmax/tmin if available (preferred). Otherwise fall back to tavg extremes.
+    try:
+        if 'tmax' in data.columns and 'tmin' in data.columns:
+            monthly_max = data.groupby(data.index.month)['tmax'].max()
+            monthly_min = data.groupby(data.index.month)['tmin'].min()
+        elif 'tavg' in data.columns:
+            # fallback: use daily average max/min
+            monthly_max = data.groupby(data.index.month)['tavg'].max()
+            monthly_min = data.groupby(data.index.month)['tavg'].min()
+        # convert numeric-month index to month names to match monthly_means index
+        if monthly_max is not None:
+            monthly_max.index = monthly_max.index.map({
+                1:'Jan', 2:'Feb', 3:'Mar', 4:'Apr', 5:'May', 6:'Jun',
+                7:'Jul', 8:'Aug', 9:'Sep', 10:'Oct', 11:'Nov', 12:'Dec'
+            })
+            monthly_min.index = monthly_min.index.map({
+                1:'Jan', 2:'Feb', 3:'Mar', 4:'Apr', 5:'May', 6:'Jun',
+                7:'Jul', 8:'Aug', 9:'Sep', 10:'Oct', 11:'Nov', 12:'Dec'
+            })
+            # align to monthly_means index order and fill missing months with NaN
+            monthly_max = monthly_max.reindex(monthly_means.index)
+            monthly_min = monthly_min.reindex(monthly_means.index)
+    except Exception:
+        # If anything goes wrong, ensure them None so later logic can skip error bars
+        monthly_max = None
+        monthly_min = None
+
+
     # Add number of days in each month (non-leap year assumption)
     days_in_month = {
         'Jan': 31, 'Feb': 28, 'Mar': 31, 'Apr': 30,
@@ -93,20 +125,60 @@ def get_weather_data(postcode, years, show_trends=False):
         'wspd': 'grey'
     }
 
+    # Prepare error arrays relative to the monthly mean tavg (only if tavg & extremes exist)
+    err_plus = None
+    err_minus = None
+    if show_errorbars and 'tavg' in monthly_means.columns and monthly_max is not None and monthly_min is not None:
+        # compute positive and negative error components (non-negative)
+        err_plus = (monthly_max - monthly_means['tavg']).fillna(0).clip(lower=0)
+        err_minus = (monthly_means['tavg'] - monthly_min).fillna(0).clip(lower=0)
+        # ensure they're numeric arrays in the same order as monthly_means
+        err_plus = err_plus.reindex(monthly_means.index).astype(float).values
+        err_minus = err_minus.reindex(monthly_means.index).astype(float).values
+    else:
+        err_plus = None
+        err_minus = None
+
+
     mode_type = "lines+markers" if show_trends else "markers"
     for i, (col, label) in enumerate(available_vars.items()):
+        # Default hover text (for variables without error bars)
+        hover_text = '%{x}<br>%{y:.2f}'
+
+        trace_kwargs = dict(
+            x=monthly_means.index,
+            y=monthly_means[col],
+            mode=mode_type,
+            name=label,
+            line=dict(color=color_map.get(col, None)),
+            marker = dict(size=8, opacity=0.8),
+            hovertemplate='%{x}<br>%{y:.2f}'
+        )
+
+        # Add error bars + hover for tavg
+        if col == 'tavg' and err_plus is not None and err_minus is not None:
+            trace_kwargs['error_y'] = dict(
+                type='data',
+                array=err_plus,
+                arrayminus=err_minus,
+                visible=True
+            )
+            trace_kwargs['customdata'] = list(zip(monthly_min, monthly_max))
+            trace_kwargs['hovertemplate'] = (
+                "<b>%{x}</b><br>"
+                "Avg: %{y:.2f} °C<br>"
+                "Min: %{customdata[0]:.2f} °C<br>"
+                "Max: %{customdata[1]:.2f} °C"
+            )
+        else:
+            trace_kwargs['hovertemplate'] = hover_text
+
         fig.add_trace(
-            go.Scatter(
-                x=monthly_means.index,
-                y=monthly_means[col],
-                mode=mode_type,  # ← use show_trends
-                name=label,
-                line=dict(color=color_map[col]),
-                hovertemplate = '%{x}<br>%{y:.2f}'       # <-- rounds y to 2 decimals
-            ),
+            go.Scatter(**trace_kwargs),
             row=row_col_map[i][0],
             col=row_col_map[i][1]
         )
+
 
     fig.update_layout(
         height=800,
@@ -130,14 +202,21 @@ def get_weather_data(postcode, years, show_trends=False):
 
         # Adjust markers/lines based on show_trends
         if show_trends:
-            individual_figs[var].update_traces(
-                mode="lines+markers",
-                hovertemplate='%{x}<br>%{y:.2f}'  # <-- rounds y to 2 decimals
-            )
+            individual_figs[var].update_traces(mode="lines+markers", hovertemplate='%{x}<br>%{y:.2f}')
         else:
+            individual_figs[var].update_traces(mode="markers", hovertemplate='%{x}<br>%{y:.2f}')
+
+        # If this is the average temperature plot and error arrays are available, add error bars
+        if var == 'tavg' and err_plus is not None and err_minus is not None:
             individual_figs[var].update_traces(
-                mode="markers",
-                hovertemplate = '%{x}<br>%{y:.2f}'  # <-- rounds y to 2 decimals
+                error_y=dict(type='data', array=err_plus, arrayminus=err_minus, visible=True),
+                customdata=list(zip(monthly_min, monthly_max)),
+                hovertemplate=(
+                    "<b>%{x}</b><br>"
+                    "Avg: %{y:.2f} °C<br>"
+                    "Min: %{customdata[0]:.2f} °C<br>"
+                    "Max: %{customdata[1]:.2f} °C"
+                )
             )
 
         if not show_trends:
@@ -146,7 +225,7 @@ def get_weather_data(postcode, years, show_trends=False):
 
 
     # Return all data and figures
-    return monthly_means, fig, plot_vars, individual_figs
+    return monthly_means, fig, plot_vars, individual_figs, monthly_max, monthly_min
 
 
 # --- Streamlit UI ---
@@ -182,14 +261,17 @@ years = st.sidebar.slider(
 
 with st.sidebar.expander("Advanced Options"):
     show_trends = st.checkbox("Show trend lines", value=True)
+    show_errorbars = st.checkbox("Show monthly min / max as error bars", value=False)
 
 
 if st.sidebar.button("Run Analysis"):
     st.session_state['run'] = True
     with st.spinner("Fetching and processing weather data..."):
-        monthly_means, fig, plot_vars, individual_figs = get_weather_data(postcode, years, show_trends)
+        monthly_means, fig, plot_vars, individual_figs, monthly_max, monthly_min = get_weather_data(postcode, years, show_trends, show_errorbars)
 
     if monthly_means is not None:
+        if show_errorbars and ('tavg' not in monthly_means.columns or monthly_max is None or monthly_min is None):
+            st.warning("Error bars unavailable: could not find appropriate daily tmax/tmin or tavg data for extremes.")
         with tab2:
             # Remove unused columns
             columns_to_drop = ['snow', 'wdir', 'wpgt', 'pres']
