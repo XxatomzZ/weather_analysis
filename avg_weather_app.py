@@ -207,9 +207,9 @@ def get_weather_data(postcode, years, show_trends=False, show_errorbars=False):
                 trace_kwargs['customdata'] = list(zip(monthly_min_all['tmin'], monthly_max_all['tmax']))
                 trace_kwargs['hovertemplate'] = (
                     "<b>%{x}</b><br>"
-                    "Avg Temp: %{y:.2f} °C<br>"
-                    "Min Temp: %{customdata[0]:.2f} °C<br>"
-                    "Max Temp: %{customdata[1]:.2f} °C"
+                    "Avg Temp: %{y:.2f}<br>"
+                    "Min Temp: %{customdata[0]:.2f}<br>"
+                    "Max Temp: %{customdata[1]:.2f}"
                 )
             elif col == 'tsun_daily':
                 # New hover for sunshine
@@ -217,9 +217,9 @@ def get_weather_data(postcode, years, show_trends=False, show_errorbars=False):
                 trace_kwargs['hovertemplate'] = (
                     "<b>%{x}</b><br>"
                     f"{label}<br>"
-                    "Avg: %{y:.2f} hr/day<br>"
-                    "Min: %{customdata[0]:.2f} hr/day<br>"
-                    "Max: %{customdata[1]:.2f} hr/day"
+                    "Avg: %{y:.2f}<br>"
+                    "Min: %{customdata[0]:.2f}<br>"
+                    "Max: %{customdata[1]:.2f}"
                 )
             else:
                 # Hover for all other variables
