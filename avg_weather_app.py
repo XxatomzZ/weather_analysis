@@ -115,12 +115,12 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
 
 
     # Calculate average daily sunshine (hours per day)
-    if 'tsun' in monthly_means.columns:
-        monthly_means['tsun_daily'] = [
-            monthly_means.loc[m, 'tsun'] / days_in_month[m] for m in monthly_means.index
-        ]
-    if 'tsun' in monthly_means.columns:
-        monthly_means = monthly_means.drop(columns=['tsun'])
+#    if 'tsun' in monthly_means.columns:
+#        monthly_means['tsun_daily'] = [
+#            monthly_means.loc[m, 'tsun'] / days_in_month[m] for m in monthly_means.index
+#        ]
+#    if 'tsun' in monthly_means.columns:
+#        monthly_means = monthly_means.drop(columns=['tsun'])
 
     # --- Create combined and individual interactive plots ---
     plot_vars = {
@@ -128,7 +128,7 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
         'tmin': 'Minimum Temperature (°C)',
         'tmax': 'Maximum Temperature (°C)',
         'prcp': 'Precipitation (mm)',
-        'tsun_daily': 'Average Daily Sunshine (hr/day)',
+        'tsun': 'Average Daily Sunshine (min/day)',
         'wspd': 'Wind Speed (km/h)'
     }
 
@@ -152,7 +152,7 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
         'tmax': 'red',
         'tmin': 'lightblue',
         'prcp': 'blue',
-        'tsun_daily': 'orange',
+        'tsun': 'orange',
         'wspd': 'grey'
     }
 
@@ -164,11 +164,11 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
                 err_plus = (monthly_max_all['tmax'] - monthly_means['tavg']).clip(lower=0)
                 err_minus = (monthly_means['tavg'] - monthly_min_all['tmin']).clip(lower=0)
                 err_dict['tavg'] = (err_plus, err_minus)
-        elif var == 'tsun_daily':
-            # Error bars for sunshine
-            err_plus = (monthly_max_all['tsun_daily'] - monthly_means['tsun_daily']).clip(lower=0)
-            err_minus = (monthly_means['tsun_daily'] - monthly_min_all['tsun_daily']).clip(lower=0)
-            err_dict['tsun_daily'] = (err_plus, err_minus)
+#        elif var == 'tsun_daily':
+#            # Error bars for sunshine
+#            err_plus = (monthly_max_all['tsun_daily'] - monthly_means['tsun_daily']).clip(lower=0)
+#            err_minus = (monthly_means['tsun_daily'] - monthly_min_all['tsun_daily']).clip(lower=0)
+#            err_dict['tsun_daily'] = (err_plus, err_minus)
         else:
             # Other variables
             err_plus = (monthly_max_all[var] - monthly_means[var]).clip(lower=0)
@@ -211,16 +211,16 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
                     "Min Temp: %{customdata[0]:.2f}<br>"
                     "Max Temp: %{customdata[1]:.2f}"
                 )
-            elif col == 'tsun_daily':
-                # New hover for sunshine
-                trace_kwargs['customdata'] = list(zip(monthly_min_all['tsun_daily'], monthly_max_all['tsun_daily']))
-                trace_kwargs['hovertemplate'] = (
-                    "<b>%{x}</b><br>"
-                    f"{label}<br>"
-                    "Avg: %{y:.2f}<br>"
-                    "Min: %{customdata[0]:.2f}<br>"
-                    "Max: %{customdata[1]:.2f}"
-                )
+#            elif col == 'tsun_daily':
+#                # New hover for sunshine
+#               trace_kwargs['customdata'] = list(zip(monthly_min_all['tsun_daily'], monthly_max_all['tsun_daily']))
+#                trace_kwargs['hovertemplate'] = (
+#                    "<b>%{x}</b><br>"
+#                    f"{label}<br>"
+#                    "Avg: %{y:.2f}<br>"
+#                    "Min: %{customdata[0]:.2f}<br>"
+#                    "Max: %{customdata[1]:.2f}"
+#                )
             else:
                 # Hover for all other variables
                 trace_kwargs['customdata'] = list(zip(monthly_min_all[col], monthly_max_all[col]))
@@ -303,7 +303,7 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
 
 
     # Return all data and figures
-    return data, monthly_means, monthly_min, monthly_max, fig, plot_vars, individual_figs
+    return data, monthly_means, monthly_min, monthly_max, fig, plot_vars, individual_figs, color_map
 
 
 # --- Streamlit UI ---
@@ -317,7 +317,8 @@ st.set_page_config(
 st.title("UK Weather Pattern Analysis")
 st.subheader("Analyse average monthly weather by postcode")
 st.markdown("---")  # Horizontal divider line
-st.caption("Data from Meteostat (2005–2025) - Note: data may be unavailable for older years")
+st.caption("Data from Meteostat (2005–2025)")
+st.caption("Note: data may be unavailable for some regions/years")
 
 tab1, tab2, tab3 = st.tabs(["Charts", "Data Table", "Yearly Trends"])
 
@@ -348,8 +349,8 @@ yearly_variable = st.sidebar.selectbox(
         "Minimum Temperature (°C)",
         "Maximum Temperature (°C)",
         "Precipitation (mm)",
-        "Wind Speed (km/h)",
-        "Average Daily Sunshine (hr/day)"
+        "Average Daily Sunshine (min/day)",
+        "Wind Speed (km/h)"
     ]
 )
 
@@ -370,8 +371,8 @@ yearly_var_map = {
     "Minimum Temperature (°C)": "tmin",
     "Maximum Temperature (°C)": "tmax",
     "Precipitation (mm)": "prcp",
-    "Wind Speed (km/h)": "wspd",
-    "Average Daily Sunshine (hr/day)": "tsun"
+    "Average Daily Sunshine (min/day)": "tsun",
+    "Wind Speed (km/h)": "wspd"
 }
 
 
@@ -383,7 +384,7 @@ with st.sidebar.expander("Advanced Options"):
 if st.sidebar.button("Run Analysis"):
     st.session_state['run'] = True
     with st.spinner("Fetching and processing weather data..."):
-        data, monthly_means, monthly_min, monthly_max, fig, plot_vars, individual_figs = get_weather_data(postcode, start_year, end_year, show_trends, show_errorbars)
+        data, monthly_means, monthly_min, monthly_max, fig, plot_vars, individual_figs, color_map = get_weather_data(postcode, start_year, end_year, show_trends, show_errorbars)
 
     if monthly_means is not None:
         # ---- Compute yearly averages for each month ----
@@ -414,7 +415,7 @@ if st.sidebar.button("Run Analysis"):
                 'tmin': 'Minimum Temperature (°C)',
                 'tmax': 'Maximum Temperature (°C)',
                 'prcp': 'Precipitation (mm)',
-                'tsun_daily': 'Average Daily Sunshine (hr/day)',
+                'tsun': 'Average Daily Sunshine (min/day)',
                 'wspd': 'Wind Speed (km/h)'
             }
 
@@ -443,8 +444,11 @@ if st.sidebar.button("Run Analysis"):
             cols = st.columns(3)
             for i, m in enumerate(months_to_plot):
                 with cols[i % 3]:
+                    # fetch the dataframe for this month
+                    df_m = monthly_yearly[m]
+
+                    # filter by user-selected year range
                     df_m = df_m[(df_m['Year'] >= start_year) & (df_m['Year'] <= end_year)]
-                    df_m.columns = ["Year", yearly_variable]
 
                     fig_m = px.line(
                         df_m,
@@ -452,7 +456,8 @@ if st.sidebar.button("Run Analysis"):
                         y=yearly_variable,
                         markers=True,
                         title=month_names[m - 1],
-                        template="plotly_white"
+                        template="plotly_white",
+                        color_discrete_sequence=[color_map.get(selected_var, "black")]
                     )
                     fig_m.update_layout(height=250)
                     st.plotly_chart(fig_m, use_container_width=True)
