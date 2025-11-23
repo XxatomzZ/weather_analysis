@@ -13,7 +13,7 @@ import re
 
 
 # --- Define Function ---
-def get_weather_data(postcode, years, show_trends=False, show_errorbars=False):
+def get_weather_data(postcode, start_year, end_year, show_trends=False, show_errorbars=False):
     # Fetch coordinates
     res = requests.get(f"https://api.postcodes.io/postcodes/{postcode}")
     if res.status_code != 200 or res.json()['status'] != 200:
@@ -27,8 +27,8 @@ def get_weather_data(postcode, years, show_trends=False, show_errorbars=False):
 
     # Define location and date range
     loc = Point(lat, long)
-    end = datetime.now()
-    start = datetime(end.year - years,1, 1)
+    start = datetime(start_year, 1, 1)
+    end = datetime(end_year, 12, 31)
 
     # Add number of days in each month (non-leap year assumption)
     days_in_month = {
@@ -241,7 +241,7 @@ def get_weather_data(postcode, years, show_trends=False, show_errorbars=False):
     fig.update_layout(
         height=800,
         width=1000,
-        title_text=f"Average Monthly Weather Overview for {postcode.upper()} ({years} Years)",
+        title_text=f"Average Monthly Weather Overview for {postcode.upper()} ({start_year}-{end_year})",
         template="plotly_white",
         showlegend=False
     )
@@ -317,7 +317,7 @@ st.set_page_config(
 st.title("UK Weather Pattern Analysis")
 st.subheader("Analyse average monthly weather by postcode")
 st.markdown("---")  # Horizontal divider line
-st.caption("Data from Meteostat (2005–2025)")
+st.caption("Data from Meteostat (2005–2025) - Note: data may be unavailable for older years")
 
 tab1, tab2, tab3 = st.tabs(["Charts", "Data Table", "Yearly Trends"])
 
@@ -328,14 +328,17 @@ if postcode:
     if not re.match(r"^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$", postcode, re.I):
         st.error("Invalid UK postcode")
 
-years = st.sidebar.slider(
-    "Years of historical data to analyse",
-    min_value=1,
-    max_value=20,
-    value=10,
+year_range = st.sidebar.slider(
+    "Select range of years to analyse",
+    min_value=2005,
+    max_value=2025,
+    value=(2015, 2025),  # default range
     step=1,
-    help="Select how many past years of data to include (1–20 years)"
+    help="Select start and end year for historical data"
 )
+
+start_year, end_year = year_range
+
 
 
 yearly_variable = st.sidebar.selectbox(
@@ -380,7 +383,7 @@ with st.sidebar.expander("Advanced Options"):
 if st.sidebar.button("Run Analysis"):
     st.session_state['run'] = True
     with st.spinner("Fetching and processing weather data..."):
-        data, monthly_means, monthly_min, monthly_max, fig, plot_vars, individual_figs = get_weather_data(postcode, years, show_trends, show_errorbars)
+        data, monthly_means, monthly_min, monthly_max, fig, plot_vars, individual_figs = get_weather_data(postcode, start_year, end_year, show_trends, show_errorbars)
 
     if monthly_means is not None:
         # ---- Compute yearly averages for each month ----
@@ -440,7 +443,7 @@ if st.sidebar.button("Run Analysis"):
             cols = st.columns(3)
             for i, m in enumerate(months_to_plot):
                 with cols[i % 3]:
-                    df_m = year_month_df.xs(m, level='month_num')[yearly_var_map[yearly_variable]].reset_index()
+                    df_m = df_m[(df_m['Year'] >= start_year) & (df_m['Year'] <= end_year)]
                     df_m.columns = ["Year", yearly_variable]
 
                     fig_m = px.line(
