@@ -303,7 +303,7 @@ def get_weather_data(postcode, years, show_trends=False, show_errorbars=False):
 
 
     # Return all data and figures
-    return monthly_means, monthly_min, monthly_max, fig, plot_vars, individual_figs
+    return data, monthly_means, monthly_min, monthly_max, fig, plot_vars, individual_figs
 
 
 # --- Streamlit UI ---
@@ -319,7 +319,7 @@ st.subheader("Analyse average monthly weather by postcode")
 st.markdown("---")  # Horizontal divider line
 st.caption("Data from Meteostat (2005–2025)")
 
-tab1, tab2 = st.tabs(["Charts", "Data Table"])
+tab1, tab2, tab3 = st.tabs(["Charts", "Data Table", "Yearly Trends"])
 
 st.sidebar.header("Settings ⚙️")
 
@@ -337,6 +337,41 @@ years = st.sidebar.slider(
     help="Select how many past years of data to include (1–20 years)"
 )
 
+
+yearly_variable = st.sidebar.selectbox(
+    "Select variable for yearly trends",
+    [
+        "Average Temperature (°C)",
+        "Minimum Temperature (°C)",
+        "Maximum Temperature (°C)",
+        "Precipitation (mm)",
+        "Wind Speed (km/h)",
+        "Average Daily Sunshine (hr/day)"
+    ]
+)
+
+month_names = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"
+]
+
+selected_months = st.sidebar.multiselect(
+    "Select month(s) to display:",
+    options=month_names,
+    default=month_names  # default = all months
+)
+
+
+yearly_var_map = {
+    "Average Temperature (°C)": "tavg",
+    "Minimum Temperature (°C)": "tmin",
+    "Maximum Temperature (°C)": "tmax",
+    "Precipitation (mm)": "prcp",
+    "Wind Speed (km/h)": "wspd",
+    "Average Daily Sunshine (hr/day)": "tsun"
+}
+
+
 with st.sidebar.expander("Advanced Options"):
     show_trends = st.checkbox("Show trend lines", value=True)
     show_errorbars = st.checkbox("Show monthly min/max as error bars", value=False)
@@ -345,9 +380,26 @@ with st.sidebar.expander("Advanced Options"):
 if st.sidebar.button("Run Analysis"):
     st.session_state['run'] = True
     with st.spinner("Fetching and processing weather data..."):
-        monthly_means, monthly_min, monthly_max, fig, plot_vars, individual_figs = get_weather_data(postcode, years, show_trends, show_errorbars)
+        data, monthly_means, monthly_min, monthly_max, fig, plot_vars, individual_figs = get_weather_data(postcode, years, show_trends, show_errorbars)
 
     if monthly_means is not None:
+        # ---- Compute yearly averages for each month ----
+        data['year'] = data.index.year
+        data['month_num'] = data.index.month
+
+        # Prepare dataframe: rows = years, columns = months
+        year_month_df = data.groupby(['year', 'month_num']).mean(numeric_only=True)
+
+        # Convert to an easier structure: dict of month → dataframe
+        monthly_yearly = {}
+        for m in range(1, 12 + 1):
+            df_m = year_month_df.xs(m, level='month_num')[yearly_var_map[yearly_variable]].reset_index()
+            df_m.columns = ['Year', yearly_variable]
+            monthly_yearly[m] = df_m
+
+        selected_var = yearly_var_map[yearly_variable]
+
+
         with tab2:
             # Remove unused columns
             columns_to_drop = ['snow', 'wdir', 'wpgt', 'pres']
@@ -375,6 +427,33 @@ if st.sidebar.button("Run Analysis"):
                 file_name=f"weather_summary_{postcode}.csv",
                 mime="text/csv"
             )
+
+        with tab3:
+            st.subheader("Yearly Trends by Month")
+
+            # Build a mapping: "January" -> 1, etc.
+            month_to_num = {name: i + 1 for i, name in enumerate(month_names)}
+            # Convert selected month names to numbers
+            months_to_plot = [month_to_num[m] for m in selected_months]
+
+            # Only plot selected months
+            cols = st.columns(3)
+            for i, m in enumerate(months_to_plot):
+                with cols[i % 3]:
+                    df_m = year_month_df.xs(m, level='month_num')[yearly_var_map[yearly_variable]].reset_index()
+                    df_m.columns = ["Year", yearly_variable]
+
+                    fig_m = px.line(
+                        df_m,
+                        x="Year",
+                        y=yearly_variable,
+                        markers=True,
+                        title=month_names[m - 1],
+                        template="plotly_white"
+                    )
+                    fig_m.update_layout(height=250)
+                    st.plotly_chart(fig_m, use_container_width=True)
+            st.info("You can download the plot as a PNG directly from the chart's toolbar.")
 
         with tab1:
             st.plotly_chart(
