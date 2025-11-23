@@ -230,6 +230,8 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
                     "Min: %{customdata[0]:.2f}<br>"
                     "Max: %{customdata[1]:.2f}"
                 )
+        else:
+            trace_kwargs['hovertemplate'] = "<b>%{x}</b><br>%{y:.2f}"
 
         fig.add_trace(
             go.Scatter(**trace_kwargs),
@@ -458,6 +460,9 @@ if st.sidebar.button("Run Analysis"):
                         title=month_names[m - 1],
                         template="plotly_white",
                         color_discrete_sequence=[color_map.get(selected_var, "black")]
+                    )
+                    fig_m.update_traces(
+                        hovertemplate=f"(%{{x}}): %{{y:.2f}}"
                     )
                     fig_m.update_layout(height=250)
                     st.plotly_chart(fig_m, use_container_width=True)
