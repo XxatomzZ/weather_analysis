@@ -452,6 +452,36 @@ if st.sidebar.button("Run Analysis"):
                     # filter by user-selected year range
                     df_m = df_m[(df_m['Year'] >= start_year) & (df_m['Year'] <= end_year)]
 
+                    # ----- YEARLY ERROR BARS (inside for-loop, per month) -----
+                    if show_errorbars:
+                        # Compute yearly min/max for the selected variable
+                        yearly_min = data.groupby(['year', 'month_num'])[selected_var].min().reset_index()
+                        yearly_max = data.groupby(['year', 'month_num'])[selected_var].max().reset_index()
+
+                        # Extract min/max for this month
+                        df_min = yearly_min[yearly_min['month_num'] == m]
+                        df_max = yearly_max[yearly_max['month_num'] == m]
+
+                        # Merge into df_m for alignment
+                        df_m = df_m.merge(
+                            df_min[['year', selected_var]],
+                            left_on='Year',
+                            right_on='year',
+                            how='left'
+                        ).rename(columns={selected_var: 'min_val'})
+
+                        df_m = df_m.merge(
+                            df_max[['year', selected_var]],
+                            left_on='Year',
+                            right_on='year',
+                            how='left'
+                        ).rename(columns={selected_var: 'max_val'})
+
+                        # Calculate error bar arrays
+                        err_plus = (df_m['max_val'] - df_m[yearly_variable]).clip(lower=0)
+                        err_minus = (df_m[yearly_variable] - df_m['min_val']).clip(lower=0)
+
+
                     fig_m = px.line(
                         df_m,
                         x="Year",
@@ -464,6 +494,17 @@ if st.sidebar.button("Run Analysis"):
                     fig_m.update_traces(
                         hovertemplate=f"(%{{x}}): %{{y:.2f}}"
                     )
+                    if show_errorbars:
+                        fig_m.update_traces(
+                            error_y=dict(
+                                type="data",
+                                array=err_plus,
+                                arrayminus=err_minus,
+                                visible=True
+                            ),
+                            customdata=list(zip(df_m['min_val'], df_m['max_val'])),
+                            hovertemplate="<b>%{x}</b><br>Avg: %{y:.2f}<br>Min: %{customdata[0]:.2f}<br>Max: %{customdata[1]:.2f}"
+                        )
                     fig_m.update_layout(height=250)
                     st.plotly_chart(fig_m, use_container_width=True)
             st.info("You can download the plot as a PNG directly from the chart's toolbar.")
