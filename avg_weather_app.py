@@ -678,7 +678,7 @@ if st.sidebar.button("Run Analysis"):
                     forecasts[col] = pd.DataFrame(columns=['ds','yhat','yhat_lower','yhat_upper'])
                     continue
 
-                with st.spinner(f"Fitting Prophet for {label}..."):
+                with st.spinner(f"Simulating Predictions for {label}..."):
                     fcst_df, model = fit_and_forecast_prophet(monthly_series, periods=forecast_horizon)
 
                 if fcst_df is None or fcst_df.empty:
