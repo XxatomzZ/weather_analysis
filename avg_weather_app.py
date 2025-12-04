@@ -2,6 +2,7 @@ import streamlit as st
 #import matplotlib.pyplot as plt
 import plotly.express as px
 from plotly.subplots import make_subplots
+import plotly.colors as pc
 import plotly.graph_objects as go
 from datetime import datetime
 from meteostat import Point, Daily
@@ -10,7 +11,19 @@ import pandas as pd
 import requests
 import io
 import re
+from prophet import Prophet
+#from prophet.serialize import model_to_json, model_from_json
 
+
+# Color map for variables
+color_map = {
+    'tavg': 'green',
+    'tmax': 'red',
+    'tmin': 'lightblue',
+    'prcp': 'blue',
+    'tsun': 'orange',
+    'wspd': 'grey'
+}
 
 # --- Define Function ---
 def get_weather_data(postcode, start_year, end_year, show_trends=False, show_errorbars=False):
@@ -146,15 +159,6 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
         4: (3, 1), 5: (3, 2)
     }
 
-    # Color map for variables
-    color_map = {
-        'tavg': 'green',
-        'tmax': 'red',
-        'tmin': 'lightblue',
-        'prcp': 'blue',
-        'tsun': 'orange',
-        'wspd': 'grey'
-    }
 
     err_dict = {}
     for var in available_vars.keys():
@@ -308,6 +312,127 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
     return data, monthly_means, monthly_min, monthly_max, fig, plot_vars, individual_figs, color_map
 
 
+# ----------------- Prophet forecast helpers -----------------
+# Shared colour palette for variable ordering (used in charts + forecast)
+FORECAST_COLORS = [
+    "green",
+    "red",
+    "lightblue",
+    "blue",
+    "orange",
+    "grey"
+]
+@st.cache_data(show_spinner=False)
+def build_monthly_series_from_daily(daily_df, var='tavg'):
+    """
+    Build a monthly-resampled pandas Series (DatetimeIndex at month-end) from the daily DataFrame.
+    daily_df: DataFrame with DatetimeIndex (your `data` variable)
+    var: variable column name, e.g. 'tavg'
+    """
+    if var not in daily_df.columns:
+        return pd.Series(dtype=float)
+    monthly = daily_df[var].resample('M').mean()
+    monthly = monthly.sort_index()
+    # drop months with NaN (Prophet requires no missing ds/y pairs)
+    monthly = monthly.dropna()
+    monthly.index = pd.to_datetime(monthly.index)
+    return monthly
+
+# cache the forecast results so repeated clicks don't re-fit unless inputs change
+@st.cache_data(show_spinner=False)
+def fit_and_forecast_prophet(monthly_series, periods=12, yearly_seasonality=True):
+    """
+    monthly_series: pd.Series with DatetimeIndex (monthly end-of-month dates)
+    returns: forecast DataFrame containing ds, yhat, yhat_lower, yhat_upper, and the model object
+    """
+    # prepare DataFrame for Prophet
+    df = monthly_series.reset_index()
+    df.columns = ['ds', 'y']  # force correct naming
+    # if input series has no rows, return empty
+    if df.empty:
+        return pd.DataFrame(), None
+
+    m = Prophet(yearly_seasonality=yearly_seasonality, weekly_seasonality=False, daily_seasonality=False)
+    m.fit(df)
+
+    future = m.make_future_dataframe(periods=periods, freq='M')
+    fcst = m.predict(future)
+
+    # Return forecast df and the fitted model
+    return fcst[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].copy(), m
+
+def plot_prophet_forecast(monthly_series, fcst_df, var_label="Average Temperature (°C)",
+                          postcode="POSTCODE", forecast_only=True, color=None):
+    """
+    Plot forecast-only region (fcst_df must contain ds, yhat, yhat_lower, yhat_upper).
+    color: hex or named color string for the median line.
+    """
+    fcst_df = fcst_df.copy()
+    fcst_df['ds'] = pd.to_datetime(fcst_df['ds'])
+
+    # find last historical date
+    if monthly_series is not None and not monthly_series.empty:
+        last_hist = pd.to_datetime(monthly_series.index.max())
+    else:
+        last_hist = fcst_df['ds'].min() - pd.DateOffset(days=1)
+
+    # Keep only forecast rows (ds > last_hist)
+    forecast_mask = fcst_df['ds'] > last_hist
+    f_med = fcst_df.loc[forecast_mask]
+    f_all = fcst_df.loc[forecast_mask].copy()
+
+    # Choose color fallback
+    if color is None:
+        color = "royalblue"
+
+
+    fig = go.Figure()
+
+    # Forecast median
+    fig.add_trace(go.Scatter(
+        x=f_med['ds'],
+        y=f_med['yhat'],
+        mode='lines+markers',
+        name='',
+        line=dict(color=color),
+        marker=dict(size=6),
+        customdata=list(zip(f_all['yhat_lower'], f_all['yhat_upper'])),  # min/max
+        hovertemplate=(
+            "%{x|%b %Y}<br>"
+            "Median: %{y:.2f}<br>"
+            "Min: %{customdata[0]:.2f}<br>"
+            "Max: %{customdata[1]:.2f}<extra></extra>"
+        )
+    ))
+
+    # Confidence ribbon (forecast region only)
+    if not f_all.empty and 'yhat_upper' in f_all.columns and 'yhat_lower' in f_all.columns:
+        fig.add_trace(go.Scatter(
+            x=pd.concat([f_all['ds'], f_all['ds'][::-1]]),
+            y=pd.concat([f_all['yhat_upper'], f_all['yhat_lower'][::-1]]),
+            fill='toself',
+            fillcolor='rgba(173, 216, 230, 0.25)',
+            line=dict(color='rgba(255,255,255,0)'),
+            hoverinfo='skip',
+            showlegend=True,
+            name='Forecast 95% CI'
+        ))
+
+    fig.update_layout(
+        title=f"{var_label}",
+        xaxis_title="Date",
+        yaxis_title=var_label,
+        template="plotly_white",
+        height=320,
+        margin=dict(t=40, b=30, l=40, r=20),
+        showlegend=False
+    )
+    return fig
+
+
+
+
+
 # --- Streamlit UI ---
 st.set_page_config(
     page_title="UK Weather Analysis",   # Title shown in browser tab
@@ -322,7 +447,7 @@ st.markdown("---")  # Horizontal divider line
 st.caption("Data from Meteostat (2005–2025)")
 st.caption("Note: data may be unavailable for some regions/years")
 
-tab1, tab2, tab3 = st.tabs(["Charts", "Data Table", "Yearly Trends"])
+tab1, tab2, tab3, tab4 = st.tabs(["Charts", "Data Table", "Yearly Trends", "Forecast"])
 
 st.sidebar.header("Settings ⚙️")
 
@@ -382,6 +507,12 @@ with st.sidebar.expander("Advanced Options"):
     show_trends = st.checkbox("Show trend lines", value=True)
     show_errorbars = st.checkbox("Show monthly min/max as error bars", value=False)
 
+    #Forecast options
+    st.markdown("---")
+    st.write("Forecast options")
+    forecast_horizon = st.number_input("Forecast horizon (months)", min_value=1, max_value=24, value=12, step=1)
+
+
 
 if st.sidebar.button("Run Analysis"):
     st.session_state['run'] = True
@@ -413,11 +544,11 @@ if st.sidebar.button("Run Analysis"):
 
             # Rename table headers before displaying
             readable_columns = {
-                'tavg': 'Average Temperature (°C)',
-                'tmin': 'Minimum Temperature (°C)',
-                'tmax': 'Maximum Temperature (°C)',
+                'tavg': 'Average Temp. (°C)',
+                'tmin': 'Min Temp. (°C)',
+                'tmax': 'Max Temp. (°C)',
                 'prcp': 'Precipitation (mm)',
-                'tsun': 'Average Daily Sunshine (min/day)',
+                'tsun': 'Sunshine (min/day)',
                 'wspd': 'Wind Speed (km/h)'
             }
 
@@ -519,6 +650,174 @@ if st.sidebar.button("Run Analysis"):
                 }
             )
             st.info("You can download the plot as a PNG directly from the chart's toolbar (top right).")
+        # ----------------- Forecast tab (ALL VARIABLES) -----------------
+        with tab4:
+            st.subheader(f"{forecast_horizon}-month Forecast")
+
+            full_var_map = {
+                "Average Temperature (°C)": "tavg",
+                "Minimum Temperature (°C)": "tmin",
+                "Maximum Temperature (°C)": "tmax",
+                "Precipitation (mm)": "prcp",
+                "Average Daily Sunshine (min/day)": "tsun",
+                "Wind Speed (km/h)": "wspd"
+            }
+
+            # We'll collect per-variable forecast DataFrames into a dict
+            forecasts = {}
+            failed_vars = []
+
+            # iterate and compute forecasts
+            for label, col in full_var_map.items():
+                monthly_series = build_monthly_series_from_daily(data, var=col)
+                monthly_series.name = col  # ensure name exists for caching key / clarity
+
+                if monthly_series.empty:
+                    failed_vars.append((label, col))
+                    # produce an empty forecast DataFrame with ds to keep alignment
+                    forecasts[col] = pd.DataFrame(columns=['ds','yhat','yhat_lower','yhat_upper'])
+                    continue
+
+                with st.spinner(f"Fitting Prophet for {label}..."):
+                    fcst_df, model = fit_and_forecast_prophet(monthly_series, periods=forecast_horizon)
+
+                if fcst_df is None or fcst_df.empty:
+                    failed_vars.append((label, col))
+                    forecasts[col] = pd.DataFrame(columns=['ds','yhat','yhat_lower','yhat_upper'])
+                    continue
+
+                forecasts[col] = fcst_df  # store full forecast (history+future)
+
+            # Show quick message for any missing forecasts
+            if failed_vars:
+                missing_labels = ", ".join([f[0] for f in failed_vars])
+                st.warning(f"No sufficient historical data to forecast: {missing_labels}")
+
+            # ---------------- Render forecasts in 2x3 layout using color_map ----------------
+            # We'll use 2 columns and 3 rows. Order is:
+            # row1: indices 0,1 | row2: indices 2,3 | row3: indices 4,5
+            labels_cols = list(full_var_map.items())
+
+            for row_idx in range(3):
+                cols = st.columns(2)  # 2 columns per row
+                for col_idx in range(2):
+                    idx = row_idx * 2 + col_idx
+                    if idx >= len(labels_cols):
+                        with cols[col_idx]:
+                            st.write("")  # empty placeholder
+                        continue
+
+                    label, col = labels_cols[idx]
+                    fcst_df = forecasts.get(col, pd.DataFrame())
+
+                    plot_color = color_map.get(col, None)
+
+                    with cols[col_idx]:
+                        if fcst_df.empty:
+                            st.info("No forecast (insufficient data).")
+                        else:
+                            hist_series = build_monthly_series_from_daily(data, var=col)
+                            fig_fcst = plot_prophet_forecast(
+                                monthly_series=hist_series,
+                                fcst_df=fcst_df,
+                                var_label=label,
+                                postcode=postcode,
+                                forecast_only=True,
+                                color=plot_color
+                            )
+                            st.plotly_chart(fig_fcst, use_container_width=True)
+
+                if row_idx < 2:
+                    st.markdown("<div style='margin-bottom:12px'></div>", unsafe_allow_html=True)
+
+
+            # Build combined forecast table for CSV
+            # We want columns (in exact order and lowercase):
+            # month, average temp, min temp, max temp, precipitation, sunshine, wind speed
+            # We'll extract the forecast rows (future only) from each fcst DF and join on ds.
+
+            # first pick the ds / future dates from any non-empty forecast (prefer tavg)
+            ds_series = None
+            for preferred in ['tavg', 'tmin', 'tmax', 'prcp', 'tsun', 'wspd']:
+                if preferred in forecasts and not forecasts[preferred].empty:
+                    df_pref = forecasts[preferred]
+                    last_hist_date = pd.to_datetime(data.index.max()) if not data.empty else None
+                    # future rows are ds > last_hist_date
+                    if last_hist_date is not None:
+                        future_rows = df_pref[df_pref['ds'] > last_hist_date]
+                    else:
+                        future_rows = df_pref.copy()
+                    ds_series = future_rows['ds'].reset_index(drop=True)
+                    break
+
+            if ds_series is None or ds_series.empty:
+                st.error("No forecast dates available to build CSV (all forecasts failed).")
+            else:
+                combined = pd.DataFrame({'ds': ds_series})
+
+
+                # For each variable add the forecast median (yhat) aligned to combined['ds']
+                for label, col in full_var_map.items():
+                    dfc = forecasts[col]
+                    if dfc.empty:
+                        combined[col] = [pd.NA] * len(combined)
+                        continue
+
+                    last_hist_date = pd.to_datetime(data.index.max()) if not data.empty else None
+                    if last_hist_date is not None:
+                        df_future = dfc[dfc['ds'] > last_hist_date].reset_index(drop=True)
+                    else:
+                        df_future = dfc.reset_index(drop=True)
+
+                    # If number of rows mismatches, reindex to combined by date (safer)
+                    df_future = df_future.set_index('ds')
+                    combined = combined.set_index('ds')
+                    combined[col] = df_future['yhat']
+                    combined = combined.reset_index()
+
+                # Round all numeric values to 2 decimal places
+                combined = combined.round(2)
+
+                # Format month column as YYYY-MM (string) and reorder & rename columns to required headings
+                combined['month'] = combined['ds'].dt.strftime('%Y-%m')
+                combined['month'] = pd.to_datetime(combined['month'], format='%Y-%m')  # adjust format if needed
+                combined['month'] = combined['month'].dt.strftime('%b %Y')  # e.g., "Jan 2025"
+                # map column order & names exactly as requested
+                ordered = pd.DataFrame()
+                ordered['month'] = combined['month']
+                ordered['average temp'] = combined.get('tavg', pd.Series([pd.NA]*len(combined)))
+                ordered['min temp'] = combined.get('tmin', pd.Series([pd.NA]*len(combined)))
+                ordered['max temp'] = combined.get('tmax', pd.Series([pd.NA]*len(combined)))
+                ordered['precipitation'] = combined.get('prcp', pd.Series([pd.NA]*len(combined)))
+                ordered['sunshine'] = combined.get('tsun', pd.Series([pd.NA]*len(combined)))
+                ordered['wind speed'] = combined.get('wspd', pd.Series([pd.NA]*len(combined)))
+
+
+                ordered = ordered.rename(columns={
+                    'average temp': 'Average Temp. (°C)',
+                    'min temp': 'Min Temp. (°C)',
+                    'max temp': 'Max Temp. (°C)',
+                    'precipitation': 'Precipitation (mm)',
+                    'sunshine': 'Sunshine(min/day)',
+                    'wind speed': 'Wind Speed (km/h)'
+                })
+
+                # Show the CSV table in the UI
+                st.subheader("Data Table")
+                st.dataframe(ordered.fillna('N/A'))
+
+                # Create CSV bytes with exact header order and lowercase names
+                csv = ordered.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="Download forecast CSV",
+                    data=csv,
+                    file_name=f"forecast_combined_{postcode}.csv",
+                    mime="text/csv"
+                )
+
+                st.info("Missing entries indicate insufficient historical data for that variable.")
+
+
 
 st.markdown(
     """
