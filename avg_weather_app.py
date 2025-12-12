@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 #import matplotlib.pyplot as plt
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -429,6 +430,23 @@ def plot_prophet_forecast(monthly_series, fcst_df, var_label="Average Temperatur
     )
     return fig
 
+
+
+# --- google analytics ---
+
+GA_MEASUREMENT_ID = "G-2D4KH63P91"  # Replace with your GA Measurement ID
+
+components.html(f"""
+<!-- Global site tag (gtag.js) - Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id={GA_MEASUREMENT_ID}"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){{dataLayer.push(arguments);}}
+  gtag('js', new Date());
+
+  gtag('config', '{GA_MEASUREMENT_ID}');
+</script>
+""", height=0)
 
 
 
