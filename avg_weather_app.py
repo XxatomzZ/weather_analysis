@@ -918,9 +918,9 @@ st.markdown(
 #   streamlit run /Users/cam/Documents/python/weather_app/avg_weather_app.py
 
 
-'''
-push to gh
-'''
+
+## ------------------------ push to gh --------------------------------------------
+
 
 #cd /Users/cam/Documents/python/weather_app
 #git add .
