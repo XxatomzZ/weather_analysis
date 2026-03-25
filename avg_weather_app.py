@@ -62,7 +62,14 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
     # Process data
     data.index = pd.to_datetime(data.index)
     data['month'] = data.index.month
-    monthly_means = data.groupby('month').mean(numeric_only=True)
+    monthly_means = data.groupby('month').agg({
+        'tavg': 'mean',
+        'tmin': 'mean',
+        'tmax': 'mean',
+        'prcp': 'sum',
+        'tsun': 'mean',
+        'wspd': 'mean'
+    })
     monthly_means.index = monthly_means.index.map({
         1:'Jan', 2:'Feb', 3:'Mar', 4:'Apr', 5:'May', 6:'Jun',
         7:'Jul', 8:'Aug', 9:'Sep', 10:'Oct', 11:'Nov', 12:'Dec'
@@ -141,7 +148,7 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
         'tavg': 'Average Temperature (°C)',
         'tmin': 'Minimum Temperature (°C)',
         'tmax': 'Maximum Temperature (°C)',
-        'prcp': 'Precipitation (mm)',
+        'prcp': 'Precipitation (mm/month)',
         'tsun': 'Average Daily Sunshine (min/day)',
         'wspd': 'Wind Speed (km/h)'
     }
@@ -176,8 +183,17 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
 #            err_dict['tsun_daily'] = (err_plus, err_minus)
         else:
             # Other variables
-            err_plus = (monthly_max_all[var] - monthly_means[var]).clip(lower=0)
-            err_minus = (monthly_means[var] - monthly_min_all[var]).clip(lower=0)
+            if var == 'prcp':
+                # Align days with month names
+                days = pd.Series(days_in_month).reindex(monthly_means.index)
+
+                # Convert daily max/min to monthly sums
+                err_plus = (monthly_max_all[var] * days / 1).clip(lower=0) - monthly_means[var]
+                err_minus = monthly_means[var] - (monthly_min_all[var] * days / 1).clip(lower=0)
+                err_dict[var] = (err_plus, err_minus)
+            else:
+                err_plus = (monthly_max_all[var] - monthly_means[var]).clip(lower=0)
+                err_minus = (monthly_means[var] - monthly_min_all[var]).clip(lower=0)
             err_dict[var] = (err_plus, err_minus)
 
 
@@ -228,7 +244,18 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
 #                )
             else:
                 # Hover for all other variables
-                trace_kwargs['customdata'] = list(zip(monthly_min_all[col], monthly_max_all[col]))
+                if col == 'prcp':
+                    # Convert daily min/max to monthly sums (same as error bars)
+                    days = pd.Series(days_in_month).reindex(monthly_means.index)
+                    err_plus, err_minus = err_dict[col]
+
+                    hover_max = monthly_means[col] + err_plus
+                    hover_min = monthly_means[col] - err_minus
+                else:
+                    hover_min = monthly_min_all[col]
+                    hover_max = monthly_max_all[col]
+
+                trace_kwargs['customdata'] = list(zip(hover_min, hover_max))
                 trace_kwargs['hovertemplate'] = (
                     f"<b>%{{x}}</b><br>{label}<br>"
                     "Avg: %{y:.2f}<br>"
@@ -272,6 +299,28 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
 
         if show_errorbars and var in err_dict:
             err_plus, err_minus = err_dict[var]
+            if col == 'prcp':
+                days = pd.Series(days_in_month).reindex(monthly_means.index)
+                hover_min = (monthly_min_all[var] * days)
+                hover_max = (monthly_max_all[var] * days)
+            elif var == 'tavg':
+                hover_min = monthly_min_all['tmin']
+                hover_max = monthly_max_all['tmax']
+            else:
+                hover_min = monthly_min_all[var]
+                hover_max = monthly_max_all[var]
+
+            if col == 'prcp':
+                days = pd.Series(days_in_month).reindex(monthly_means.index)
+                hover_min = (monthly_min_all[var] * days)
+                hover_max = (monthly_max_all[var] * days)
+            elif var == 'tavg':
+                hover_min = monthly_min_all['tmin']
+                hover_max = monthly_max_all['tmax']
+            else:
+                hover_min = monthly_min_all[var]
+                hover_max = monthly_max_all[var]
+
             individual_figs[var].update_traces(
                 error_y=dict(
                     type='data',
@@ -279,10 +328,7 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
                     arrayminus=err_minus.values,
                     visible=True
                 ),
-                customdata=list(zip(
-                    monthly_min_all['tmin'] if var == 'tavg' else monthly_min_all[var],
-                    monthly_max_all['tmax'] if var == 'tavg' else monthly_max_all[var]
-                )),
+                customdata=list(zip(hover_min, hover_max)),
                 hovertemplate=(
                     f"<b>%{{x}}</b><br>{label}<br>"
                     "Avg: %{y:.2f}<br>"
@@ -293,14 +339,32 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
 
             # If this is the average temperature plot and error arrays are available, add error bars
             if var == 'tavg' and err_plus is not None and err_minus is not None:
+                if var == 'prcp':
+                    days = pd.Series(days_in_month).reindex(monthly_means.index)
+                    err_plus, err_minus = err_dict[col]
+
+                    hover_max = monthly_means[col] + err_plus
+                    hover_min = monthly_means[col] - err_minus
+                elif var == 'tavg':
+                    hover_min = monthly_min_all['tmin']
+                    hover_max = monthly_max_all['tmax']
+                else:
+                    hover_min = monthly_min_all[var]
+                    hover_max = monthly_max_all[var]
+
                 individual_figs[var].update_traces(
-                    error_y=dict(type='data', array=err_plus, arrayminus=err_minus, visible=True),
-                    customdata=list(zip(monthly_min, monthly_max)),
+                    error_y=dict(
+                        type='data',
+                        array=err_plus.values,
+                        arrayminus=err_minus.values,
+                        visible=True
+                    ),
+                    customdata=list(zip(hover_min, hover_max)),
                     hovertemplate=(
-                        "<b>%{x}</b><br>"
-                        "Avg: %{y:.2f} °C<br>"
-                        "Min: %{customdata[0]:.2f} °C<br>"
-                        "Max: %{customdata[1]:.2f} °C"
+                        f"<b>%{{x}}</b><br>{label}<br>"
+                        "Avg: %{y:.2f}<br>"
+                        "Min: %{customdata[0]:.2f}<br>"
+                        "Max: %{customdata[1]:.2f}"
                     )
                 )
 
@@ -493,7 +557,7 @@ yearly_variable = st.sidebar.selectbox(
         "Average Temperature (°C)",
         "Minimum Temperature (°C)",
         "Maximum Temperature (°C)",
-        "Precipitation (mm)",
+        "Precipitation (mm/month)",
         "Average Daily Sunshine (min/day)",
         "Wind Speed (km/h)"
     ]
@@ -515,7 +579,7 @@ yearly_var_map = {
     "Average Temperature (°C)": "tavg",
     "Minimum Temperature (°C)": "tmin",
     "Maximum Temperature (°C)": "tmax",
-    "Precipitation (mm)": "prcp",
+    "Precipitation (mm/month)": "prcp",
     "Average Daily Sunshine (min/day)": "tsun",
     "Wind Speed (km/h)": "wspd"
 }
@@ -565,7 +629,7 @@ if st.sidebar.button("Run Analysis"):
                 'tavg': 'Average Temp. (°C)',
                 'tmin': 'Min Temp. (°C)',
                 'tmax': 'Max Temp. (°C)',
-                'prcp': 'Precipitation (mm)',
+                'prcp': 'Precipitation (mm/month)',
                 'tsun': 'Sunshine (min/day)',
                 'wspd': 'Wind Speed (km/h)'
             }
@@ -676,7 +740,7 @@ if st.sidebar.button("Run Analysis"):
                 "Average Temperature (°C)": "tavg",
                 "Minimum Temperature (°C)": "tmin",
                 "Maximum Temperature (°C)": "tmax",
-                "Precipitation (mm)": "prcp",
+                "Precipitation (mm/month)": "prcp",
                 "Average Daily Sunshine (min/day)": "tsun",
                 "Wind Speed (km/h)": "wspd"
             }
@@ -815,7 +879,7 @@ if st.sidebar.button("Run Analysis"):
                     'average temp': 'Average Temp. (°C)',
                     'min temp': 'Min Temp. (°C)',
                     'max temp': 'Max Temp. (°C)',
-                    'precipitation': 'Precipitation (mm)',
+                    'precipitation': 'Precipitation (mm/month)',
                     'sunshine': 'Sunshine(min/day)',
                     'wind speed': 'Wind Speed (km/h)'
                 })
@@ -852,3 +916,13 @@ st.markdown(
 #   streamlit run avg_weather_app.py
 
 #   streamlit run /Users/cam/Documents/python/weather_app/avg_weather_app.py
+
+
+'''
+push to gh
+'''
+
+#cd /Users/cam/Documents/python/weather_app
+#git add .
+#git status
+#git commit -m "..................."
