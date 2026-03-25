@@ -143,13 +143,20 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
 #    if 'tsun' in monthly_means.columns:
 #        monthly_means = monthly_means.drop(columns=['tsun'])
 
+    # Calculate average daily sunshine (min/day)
+    if 'tsun' in monthly_means.columns:
+        days = pd.Series(days_in_month).reindex(monthly_means.index)
+        monthly_means['tsun_daily'] = monthly_means['tsun'] / days
+
+    monthly_means = monthly_means.drop(columns=['tsun'])
+
     # --- Create combined and individual interactive plots ---
     plot_vars = {
         'tavg': 'Average Temperature (°C)',
         'tmin': 'Minimum Temperature (°C)',
         'tmax': 'Maximum Temperature (°C)',
         'prcp': 'Precipitation (mm/month)',
-        'tsun': 'Average Daily Sunshine (min/day)',
+        'tsun_daily': 'Average Daily Sunshine (min/day)',
         'wspd': 'Wind Speed (km/h)'
     }
 
@@ -181,6 +188,10 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
 #            err_plus = (monthly_max_all['tsun_daily'] - monthly_means['tsun_daily']).clip(lower=0)
 #            err_minus = (monthly_means['tsun_daily'] - monthly_min_all['tsun_daily']).clip(lower=0)
 #            err_dict['tsun_daily'] = (err_plus, err_minus)
+        elif var == 'tsun_daily':
+            err_plus = (monthly_max_all['tsun_daily'] - monthly_means['tsun_daily']).clip(lower=0)
+            err_minus = (monthly_means['tsun_daily'] - monthly_min_all['tsun_daily']).clip(lower=0)
+            err_dict['tsun_daily'] = (err_plus, err_minus)
         else:
             # Other variables
             if var == 'prcp':
@@ -242,6 +253,18 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
 #                    "Min: %{customdata[0]:.2f}<br>"
 #                    "Max: %{customdata[1]:.2f}"
 #                )
+            elif col == 'tsun_daily':
+                trace_kwargs['customdata'] = list(zip(
+                    monthly_min_all['tsun_daily'],
+                    monthly_max_all['tsun_daily']
+                ))
+                trace_kwargs['hovertemplate'] = (
+                    "<b>%{x}</b><br>"
+                    f"{label}<br>"
+                    "Avg: %{y:.2f}<br>"
+                    "Min: %{customdata[0]:.2f}<br>"
+                    "Max: %{customdata[1]:.2f}"
+                )
             else:
                 # Hover for all other variables
                 if col == 'prcp':
@@ -299,7 +322,7 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
 
         if show_errorbars and var in err_dict:
             err_plus, err_minus = err_dict[var]
-            if col == 'prcp':
+            if var == 'prcp':
                 days = pd.Series(days_in_month).reindex(monthly_means.index)
                 hover_min = (monthly_min_all[var] * days)
                 hover_max = (monthly_max_all[var] * days)
@@ -310,7 +333,7 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
                 hover_min = monthly_min_all[var]
                 hover_max = monthly_max_all[var]
 
-            if col == 'prcp':
+            if var == 'prcp':
                 days = pd.Series(days_in_month).reindex(monthly_means.index)
                 hover_min = (monthly_min_all[var] * days)
                 hover_max = (monthly_max_all[var] * days)
