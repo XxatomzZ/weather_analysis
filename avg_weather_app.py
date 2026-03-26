@@ -55,11 +55,11 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
     data = Daily(loc, start, end)
     data = data.fetch()
     
-    # DEBUG - remove after fixing
-    st.write("tsun column exists:", 'tsun' in data.columns)
-    st.write("tsun sample values:", data['tsun'].dropna().head(20).tolist())
-    st.write("tsun non-null count:", data['tsun'].notna().sum())
-    st.write("tsun min/max:", data['tsun'].min(), data['tsun'].max())
+    # DEBUGGING
+    #st.write("tsun column exists:", 'tsun' in data.columns)
+    #st.write("tsun sample values:", data['tsun'].dropna().head(20).tolist())
+    #st.write("tsun non-null count:", data['tsun'].notna().sum())
+    #st.write("tsun min/max:", data['tsun'].min(), data['tsun'].max())
 
     if data.empty:
         st.error("No weather data available for this postcode.")
@@ -68,15 +68,14 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
     # Process data
     data.index = pd.to_datetime(data.index)
     data['month'] = data.index.month
-    monthly_means = data.groupby('month').agg({
-        'tavg': 'mean',
-        'tmin': 'mean',
-        'tmax': 'mean',
-        'prcp': 'sum',
-        'tsun': 'sum',   # sum daily minutes into monthly total
-        'wspd': 'mean'
-    })
-
+    monthly_means = data.groupby('month').agg(
+        tavg=('tavg', 'mean'),
+        tmin=('tmin', 'mean'),
+        tmax=('tmax', 'mean'),
+        prcp=('prcp', lambda x: x.sum(min_count=1)),
+        tsun=('tsun', 'mean'),   # values are already monthly totals, just average across years
+        wspd=('wspd', 'mean')
+    )
     monthly_means.index = monthly_means.index.map({
         1:'Jan', 2:'Feb', 3:'Mar', 4:'Apr', 5:'May', 6:'Jun',
         7:'Jul', 8:'Aug', 9:'Sep', 10:'Oct', 11:'Nov', 12:'Dec'
@@ -214,12 +213,9 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
                 err_minus = monthly_means[var] - (monthly_min_all[var] * days / 1).clip(lower=0)
                 err_dict[var] = (err_plus, err_minus)
             elif var == 'tsun':
-                # Convert monthly max/min daily sunshine to same unit as monthly_means (min/day)
-                days = pd.Series(days_in_month).reindex(monthly_means.index)
-                tsun_max_daily = monthly_max_all['tsun'] / days
-                tsun_min_daily = monthly_min_all['tsun'] / days
-                err_plus = (tsun_max_daily - monthly_means['tsun']).clip(lower=0)
-                err_minus = (monthly_means['tsun'] - tsun_min_daily).clip(lower=0)
+                # monthly_max_all/min_all tsun are already in same units as monthly_means
+                err_plus = (monthly_max_all['tsun'] - monthly_means['tsun']).clip(lower=0)
+                err_minus = (monthly_means['tsun'] - monthly_min_all['tsun']).clip(lower=0)
                 err_dict['tsun'] = (err_plus, err_minus)
             else:
                 err_plus = (monthly_max_all[var] - monthly_means[var]).clip(lower=0)
@@ -420,12 +416,7 @@ def build_monthly_series_from_daily(daily_df, var='tavg'):
     if var not in daily_df.columns:
         return pd.Series(dtype=float)
 
-    if var == 'tsun':
-        # Sum daily tsun per month, then divide by days in that month to get min/day
-        monthly = daily_df[var].resample('M').sum()
-        monthly = monthly / monthly.index.days_in_month
-    else:
-        monthly = daily_df[var].resample('M').mean()
+    monthly = daily_df[var].resample('M').mean()
 
     monthly = monthly.sort_index().dropna()
     monthly.index = pd.to_datetime(monthly.index)
