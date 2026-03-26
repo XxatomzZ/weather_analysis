@@ -81,7 +81,7 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
         7:'Jul', 8:'Aug', 9:'Sep', 10:'Oct', 11:'Nov', 12:'Dec'
     })
 
-    # Convert total monthly sunshine (minutes) to average daily sunshine (min/day)
+    # Convert daily sunshine  in seconds to hr/day
     if 'tsun' in monthly_means.columns:
         monthly_means['tsun'] = [
             monthly_means.loc[m, 'tsun'] / days_in_month[m]
@@ -149,8 +149,8 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
         tsun_monthly_sums.columns = ['year', 'month_name', 'tsun_sum']
 
         days_series = pd.Series(days_in_month)
-        tsun_max_by_month = tsun_monthly_sums.groupby('month_name')['tsun_sum'].max() / days_series
-        tsun_min_by_month = tsun_monthly_sums.groupby('month_name')['tsun_sum'].min() / days_series
+        tsun_max_by_month = tsun_monthly_sums.groupby('month_name')['tsun_sum'].max() / days_series / 31
+        tsun_min_by_month = tsun_monthly_sums.groupby('month_name')['tsun_sum'].min() / days_series / 31
 
         monthly_max_all['tsun'] = tsun_max_by_month.reindex(monthly_max_all.index)
         monthly_min_all['tsun'] = tsun_min_by_month.reindex(monthly_min_all.index)
@@ -170,7 +170,7 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
         'tmin': 'Minimum Temperature (°C)',
         'tmax': 'Maximum Temperature (°C)',
         'prcp': 'Precipitation (mm/month)',
-        'tsun': 'Average Daily Sunshine (min/day)',
+        'tsun': 'Average Daily Sunshine (hr/day)',
         'wspd': 'Wind Speed (km/h)'
     }
 
@@ -416,7 +416,13 @@ def build_monthly_series_from_daily(daily_df, var='tavg'):
     if var not in daily_df.columns:
         return pd.Series(dtype=float)
 
-    monthly = daily_df[var].resample('M').mean()
+    if var == 'tsun':
+        # Values are monthly totals in minutes — divide by days in month then 60 for hrs/day
+        monthly_sum = daily_df[var].resample('M').mean()
+        monthly = monthly_sum / monthly_sum.index.days_in_month / 60
+        #st.write(f"tsun forecast input sample: {monthly.dropna().head(6).tolist()}")  # DEBUGGING 
+    else:
+        monthly = daily_df[var].resample('M').mean()
 
     monthly = monthly.sort_index().dropna()
     monthly.index = pd.to_datetime(monthly.index)
@@ -577,7 +583,7 @@ yearly_variable = st.sidebar.selectbox(
         "Minimum Temperature (°C)",
         "Maximum Temperature (°C)",
         "Precipitation (mm/month)",
-        "Average Daily Sunshine (min/day)",
+        "Average Daily Sunshine (hr/day)",
         "Wind Speed (km/h)"
     ]
 )
@@ -599,7 +605,7 @@ yearly_var_map = {
     "Minimum Temperature (°C)": "tmin",
     "Maximum Temperature (°C)": "tmax",
     "Precipitation (mm/month)": "prcp",
-    "Average Daily Sunshine (min/day)": "tsun",
+    "Average Daily Sunshine (hr/day)": "tsun",
     "Wind Speed (km/h)": "wspd"
 }
 
@@ -633,6 +639,9 @@ if st.sidebar.button("Run Analysis"):
         for m in range(1, 12 + 1):
             df_m = year_month_df.xs(m, level='month_num')[yearly_var_map[yearly_variable]].reset_index()
             df_m.columns = ['Year', yearly_variable]
+            # Convert tsun from seconds/day to hours/day
+            if yearly_var_map[yearly_variable] == 'tsun':
+                df_m[yearly_variable] = df_m[yearly_variable] / 60
             monthly_yearly[m] = df_m
 
         selected_var = yearly_var_map[yearly_variable]
@@ -649,7 +658,7 @@ if st.sidebar.button("Run Analysis"):
                 'tmin': 'Min Temp. (°C)',
                 'tmax': 'Max Temp. (°C)',
                 'prcp': 'Precipitation (mm/month)',
-                'tsun': 'Sunshine (min/day)',
+                'tsun': 'Sunshine (hr/day)',
                 'wspd': 'Wind Speed (km/h)'
             }
 
@@ -689,6 +698,10 @@ if st.sidebar.button("Run Analysis"):
                         # Compute yearly min/max for the selected variable
                         yearly_min = data.groupby(['year', 'month_num'])[selected_var].min().reset_index()
                         yearly_max = data.groupby(['year', 'month_num'])[selected_var].max().reset_index()
+                        # Convert tsun from seconds/day to hours/day
+                        if selected_var == 'tsun':
+                            yearly_min[selected_var] = yearly_min[selected_var] / 60
+                            yearly_max[selected_var] = yearly_max[selected_var] / 60
 
                         # Extract min/max for this month
                         df_min = yearly_min[yearly_min['month_num'] == m]
@@ -760,7 +773,7 @@ if st.sidebar.button("Run Analysis"):
                 "Minimum Temperature (°C)": "tmin",
                 "Maximum Temperature (°C)": "tmax",
                 "Precipitation (mm/month)": "prcp",
-                "Average Daily Sunshine (min/day)": "tsun",
+                "Average Daily Sunshine (hr/day)": "tsun",
                 "Wind Speed (km/h)": "wspd"
             }
 
@@ -899,7 +912,7 @@ if st.sidebar.button("Run Analysis"):
                     'min temp': 'Min Temp. (°C)',
                     'max temp': 'Max Temp. (°C)',
                     'precipitation': 'Precipitation (mm/month)',
-                    'sunshine': 'Sunshine(min/day)',
+                    'sunshine': 'Sunshine (hr/day)',
                     'wind speed': 'Wind Speed (km/h)'
                 })
 
