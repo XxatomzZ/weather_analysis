@@ -67,9 +67,16 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
         'tmin': 'mean',
         'tmax': 'mean',
         'prcp': 'sum',
-        'tsun': 'mean',
+        'tsun': 'sum',   # sum daily minutes into monthly total
         'wspd': 'mean'
     })
+
+# Convert total monthly sunshine (minutes) to average daily sunshine (min/day)
+if 'tsun' in monthly_means.columns:
+    monthly_means['tsun'] = [
+        monthly_means.loc[m, 'tsun'] / days_in_month[m]
+        for m in monthly_means.index
+    ]
     monthly_means.index = monthly_means.index.map({
         1:'Jan', 2:'Feb', 3:'Mar', 4:'Apr', 5:'May', 6:'Jun',
         7:'Jul', 8:'Aug', 9:'Sep', 10:'Oct', 11:'Nov', 12:'Dec'
@@ -191,6 +198,14 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
                 err_plus = (monthly_max_all[var] * days / 1).clip(lower=0) - monthly_means[var]
                 err_minus = monthly_means[var] - (monthly_min_all[var] * days / 1).clip(lower=0)
                 err_dict[var] = (err_plus, err_minus)
+            elif var == 'tsun':
+                # Convert monthly max/min daily sunshine to same unit as monthly_means (min/day)
+                days = pd.Series(days_in_month).reindex(monthly_means.index)
+                tsun_max_daily = monthly_max_all['tsun'] / days
+                tsun_min_daily = monthly_min_all['tsun'] / days
+                err_plus = (tsun_max_daily - monthly_means['tsun']).clip(lower=0)
+                err_minus = (monthly_means['tsun'] - tsun_min_daily).clip(lower=0)
+                err_dict['tsun'] = (err_plus, err_minus)
             else:
                 err_plus = (monthly_max_all[var] - monthly_means[var]).clip(lower=0)
                 err_minus = (monthly_means[var] - monthly_min_all[var]).clip(lower=0)
@@ -306,17 +321,10 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
             elif var == 'tavg':
                 hover_min = monthly_min_all['tmin']
                 hover_max = monthly_max_all['tmax']
-            else:
-                hover_min = monthly_min_all[var]
-                hover_max = monthly_max_all[var]
-
-            if var == 'prcp':
+            elif var == 'tsun':
                 days = pd.Series(days_in_month).reindex(monthly_means.index)
-                hover_min = (monthly_min_all[var] * days)
-                hover_max = (monthly_max_all[var] * days)
-            elif var == 'tavg':
-                hover_min = monthly_min_all['tmin']
-                hover_max = monthly_max_all['tmax']
+                hover_min = monthly_min_all['tsun'] / days
+                hover_max = monthly_max_all['tsun'] / days
             else:
                 hover_min = monthly_min_all[var]
                 hover_max = monthly_max_all[var]
