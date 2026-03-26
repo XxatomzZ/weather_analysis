@@ -71,16 +71,17 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
         'wspd': 'mean'
     })
 
+    monthly_means.index = monthly_means.index.map({
+        1:'Jan', 2:'Feb', 3:'Mar', 4:'Apr', 5:'May', 6:'Jun',
+        7:'Jul', 8:'Aug', 9:'Sep', 10:'Oct', 11:'Nov', 12:'Dec'
+    })
+
     # Convert total monthly sunshine (minutes) to average daily sunshine (min/day)
     if 'tsun' in monthly_means.columns:
         monthly_means['tsun'] = [
             monthly_means.loc[m, 'tsun'] / days_in_month[m]
             for m in monthly_means.index
         ]
-    monthly_means.index = monthly_means.index.map({
-        1:'Jan', 2:'Feb', 3:'Mar', 4:'Apr', 5:'May', 6:'Jun',
-        7:'Jul', 8:'Aug', 9:'Sep', 10:'Oct', 11:'Nov', 12:'Dec'
-    })
 
     # Monthly max/min for all variables
     monthly_max_all = data.groupby(data.index.month).max(numeric_only=True)
