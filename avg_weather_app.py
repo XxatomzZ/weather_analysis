@@ -54,6 +54,12 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
     # Fetch daily data
     data = Daily(loc, start, end)
     data = data.fetch()
+    
+    # DEBUG - remove after fixing
+    st.write("tsun column exists:", 'tsun' in data.columns)
+    st.write("tsun sample values:", data['tsun'].dropna().head(20).tolist())
+    st.write("tsun non-null count:", data['tsun'].notna().sum())
+    st.write("tsun min/max:", data['tsun'].min(), data['tsun'].max())
 
     if data.empty:
         st.error("No weather data available for this postcode.")
