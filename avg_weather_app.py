@@ -129,7 +129,6 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
     monthly_max_all = data.groupby(data.index.month).max(numeric_only=True)
     monthly_min_all = data.groupby(data.index.month).min(numeric_only=True)
 
-    # Convert numeric-month index to month names
     month_map = {
         1: 'Jan', 2: 'Feb', 3: 'Mar', 4: 'Apr', 5: 'May', 6: 'Jun',
         7: 'Jul', 8: 'Aug', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dec'
@@ -137,10 +136,19 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
     monthly_max_all.index = monthly_max_all.index.map(month_map)
     monthly_min_all.index = monthly_min_all.index.map(month_map)
 
-    # Compute monthly min/max daily sunshine
-    if 'tsun' in monthly_max_all.columns and 'tsun' in monthly_min_all.columns:
-        monthly_max_all['tsun_daily'] = monthly_max_all['tsun'] / pd.Series(days_in_month)
-        monthly_min_all['tsun_daily'] = monthly_min_all['tsun'] / pd.Series(days_in_month)
+    # Override tsun with per-year monthly sums, then take max/min of those sums
+    if 'tsun' in data.columns:
+        data['month_name'] = data.index.month.map(month_map)
+        tsun_monthly_sums = data.groupby([data.index.year, 'month_name'])['tsun'].sum()
+        tsun_monthly_sums = tsun_monthly_sums.reset_index()
+        tsun_monthly_sums.columns = ['year', 'month_name', 'tsun_sum']
+
+        days_series = pd.Series(days_in_month)
+        tsun_max_by_month = tsun_monthly_sums.groupby('month_name')['tsun_sum'].max() / days_series
+        tsun_min_by_month = tsun_monthly_sums.groupby('month_name')['tsun_sum'].min() / days_series
+
+        monthly_max_all['tsun'] = tsun_max_by_month.reindex(monthly_max_all.index)
+        monthly_min_all['tsun'] = tsun_min_by_month.reindex(monthly_min_all.index)
 
 
     # Calculate average daily sunshine (hours per day)
@@ -405,10 +413,15 @@ def build_monthly_series_from_daily(daily_df, var='tavg'):
     """
     if var not in daily_df.columns:
         return pd.Series(dtype=float)
-    monthly = daily_df[var].resample('M').mean()
-    monthly = monthly.sort_index()
-    # drop months with NaN (Prophet requires no missing ds/y pairs)
-    monthly = monthly.dropna()
+
+    if var == 'tsun':
+        # Sum daily tsun per month, then divide by days in that month to get min/day
+        monthly = daily_df[var].resample('M').sum()
+        monthly = monthly / monthly.index.days_in_month
+    else:
+        monthly = daily_df[var].resample('M').mean()
+
+    monthly = monthly.sort_index().dropna()
     monthly.index = pd.to_datetime(monthly.index)
     return monthly
 
