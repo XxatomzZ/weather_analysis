@@ -944,6 +944,8 @@ st.markdown(
 )
 
 
+
+
 #   cd /Users/cam/Documents/python/weather_app
 #   streamlit run avg_weather_app.py
 
@@ -958,4 +960,4 @@ st.markdown(
 #git add .
 #git status
 #git commit -m "..................."
-#git push
+#git push 
