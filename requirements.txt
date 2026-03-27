@@ -7,7 +7,8 @@ numpy>=1.24.0,<2.0.0
 kaleido>=0.2.1
 plotly>=5.0.0
 prophet==1.1.5
-holidays
+cmdstanpy>=1.0.4
+holidays>=0.13
 convertdate
 lunarcalendar
 pymeeus
