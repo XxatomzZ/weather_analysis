@@ -1,6 +1,6 @@
 streamlit
 matplotlib
-pandas
+pandas==1.5.3
 requests
 meteostat==1.6.8
 numpy
