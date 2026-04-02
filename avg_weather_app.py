@@ -53,6 +53,9 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
     # Fetch daily data
     data = Daily(loc, start, end)
     data = data.fetch()
+    # Replace zero precipitation with NaN (meteostat fills missing prcp as 0)
+    data['prcp'] = data['prcp'].replace(0, float('nan'))
+    data['tsun'] = data['tsun'].replace(0, float('nan'))
 
     if data.empty:
         st.error("No weather data available for this postcode.")
@@ -343,9 +346,16 @@ def build_monthly_series_from_daily(daily_df, var='tavg'):
     """
     if var not in daily_df.columns:
         return pd.Series(dtype=float)
-    monthly = daily_df[var].resample('M').mean()
+    
+    # Precipitation should be summed per month, not averaged
+    if var == 'prcp':
+        monthly = daily_df[var].resample('M').sum(min_count=1)
+    else:
+        monthly = daily_df[var].resample('M').mean()
+    
     monthly = monthly.sort_index()
-    # drop months with NaN (Prophet requires no missing ds/y pairs)
+    # Replace zeros with NaN before dropping (catches meteostat zero-fill)
+    monthly = monthly.replace(0, float('nan'))
     monthly = monthly.dropna()
     monthly.index = pd.to_datetime(monthly.index)
     return monthly
@@ -563,6 +573,8 @@ if st.sidebar.button("Run Analysis"):
         for m in range(1, 12 + 1):
             df_m = year_month_df.xs(m, level='month_num')[yearly_var_map[yearly_variable]].reset_index()
             df_m.columns = ['Year', yearly_variable]
+            # Remove rows where value is zero or NaN (meteostat missing data fill)
+            df_m = df_m[df_m[yearly_variable].notna() & (df_m[yearly_variable] != 0)]
             monthly_yearly[m] = df_m
 
         selected_var = yearly_var_map[yearly_variable]
