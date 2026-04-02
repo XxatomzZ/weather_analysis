@@ -25,6 +25,34 @@ color_map = {
     'wspd': 'grey'
 }
 
+# additional source for sunshine data
+def fetch_openmeteo_sunshine(lat, lon, start_year, end_year):
+    """
+    Fetch daily sunshine duration from Open-Meteo archive API.
+    Returns a pandas Series with DatetimeIndex, values in minutes/day.
+    """
+    url = "https://archive-api.open-meteo.com/v1/archive"
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "start_date": f"{start_year}-01-01",
+        "end_date": f"{end_year}-12-31",
+        "daily": "sunshine_duration",
+        "timezone": "Europe/London"
+    }
+    try:
+        r = requests.get(url, params=params, timeout=15)
+        r.raise_for_status()
+        js = r.json()
+        dates = pd.to_datetime(js['daily']['time'])
+        # Open-Meteo returns sunshine_duration in seconds — convert to minutes
+        sunshine_minutes = pd.Series(js['daily']['sunshine_duration'], index=dates) / 60.0
+        return sunshine_minutes
+    except Exception as e:
+        st.warning(f"Could not fetch sunshine data from Open-Meteo: {e}")
+        return pd.Series(dtype=float)
+
+
 # --- Define Function ---
 def get_weather_data(postcode, start_year, end_year, show_trends=False, show_errorbars=False):
     # Fetch coordinates
@@ -53,15 +81,19 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
     # Fetch daily data
     data = Daily(loc, start, end)
     data = data.fetch()
-    st.write("tsun sample:", data['tsun'].dropna().head(10) if 'tsun' in data.columns else "column missing")
-    st.write("tsun non-null count:", data['tsun'].notna().sum() if 'tsun' in data.columns else 0)
     # Replace zero precipitation with NaN (meteostat fills missing prcp as 0)
     data['prcp'] = data['prcp'].replace(0, float('nan'))
-    data['tsun'] = data['tsun'].replace(0, float('nan'))
 
     if data.empty:
         st.error("No weather data available for this postcode.")
         return None, None
+    
+    # Replace meteostat tsun (unreliable) with Open-Meteo sunshine duration
+    sunshine_series = fetch_openmeteo_sunshine(lat, long, start_year, end_year)
+    if not sunshine_series.empty:
+        sunshine_series.index = pd.to_datetime(sunshine_series.index)
+        # Align to meteostat data index
+        data['tsun'] = sunshine_series.reindex(data.index)
 
     # Process data
     data.index = pd.to_datetime(data.index)
