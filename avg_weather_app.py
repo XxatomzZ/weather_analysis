@@ -54,12 +54,6 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
     # Fetch daily data
     data = Daily(loc, start, end)
     data = data.fetch()
-    
-    # DEBUGGING
-    #st.write("tsun column exists:", 'tsun' in data.columns)
-    #st.write("tsun sample values:", data['tsun'].dropna().head(20).tolist())
-    #st.write("tsun non-null count:", data['tsun'].notna().sum())
-    #st.write("tsun min/max:", data['tsun'].min(), data['tsun'].max())
 
     if data.empty:
         st.error("No weather data available for this postcode.")
@@ -68,25 +62,11 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
     # Process data
     data.index = pd.to_datetime(data.index)
     data['month'] = data.index.month
-    monthly_means = data.groupby('month').agg(
-        tavg=('tavg', 'mean'),
-        tmin=('tmin', 'mean'),
-        tmax=('tmax', 'mean'),
-        prcp=('prcp', lambda x: x.sum(min_count=1)),
-        tsun=('tsun', 'mean'),   # values are already monthly totals, just average across years
-        wspd=('wspd', 'mean')
-    )
+    monthly_means = data.groupby('month').mean(numeric_only=True)
     monthly_means.index = monthly_means.index.map({
         1:'Jan', 2:'Feb', 3:'Mar', 4:'Apr', 5:'May', 6:'Jun',
         7:'Jul', 8:'Aug', 9:'Sep', 10:'Oct', 11:'Nov', 12:'Dec'
     })
-
-    # Convert daily sunshine  in seconds to hr/day
-    if 'tsun' in monthly_means.columns:
-        monthly_means['tsun'] = [
-            monthly_means.loc[m, 'tsun'] / days_in_month[m]
-            for m in monthly_means.index
-        ]
 
     # Monthly max/min for all variables
     monthly_max_all = data.groupby(data.index.month).max(numeric_only=True)
@@ -134,6 +114,7 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
     monthly_max_all = data.groupby(data.index.month).max(numeric_only=True)
     monthly_min_all = data.groupby(data.index.month).min(numeric_only=True)
 
+    # Convert numeric-month index to month names
     month_map = {
         1: 'Jan', 2: 'Feb', 3: 'Mar', 4: 'Apr', 5: 'May', 6: 'Jun',
         7: 'Jul', 8: 'Aug', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dec'
@@ -141,19 +122,10 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
     monthly_max_all.index = monthly_max_all.index.map(month_map)
     monthly_min_all.index = monthly_min_all.index.map(month_map)
 
-    # Override tsun with per-year monthly sums, then take max/min of those sums
-    if 'tsun' in data.columns:
-        data['month_name'] = data.index.month.map(month_map)
-        tsun_monthly_sums = data.groupby([data.index.year, 'month_name'])['tsun'].sum()
-        tsun_monthly_sums = tsun_monthly_sums.reset_index()
-        tsun_monthly_sums.columns = ['year', 'month_name', 'tsun_sum']
-
-        days_series = pd.Series(days_in_month)
-        tsun_max_by_month = tsun_monthly_sums.groupby('month_name')['tsun_sum'].max() / days_series / 31
-        tsun_min_by_month = tsun_monthly_sums.groupby('month_name')['tsun_sum'].min() / days_series / 31
-
-        monthly_max_all['tsun'] = tsun_max_by_month.reindex(monthly_max_all.index)
-        monthly_min_all['tsun'] = tsun_min_by_month.reindex(monthly_min_all.index)
+    # Compute monthly min/max daily sunshine
+    if 'tsun' in monthly_max_all.columns and 'tsun' in monthly_min_all.columns:
+        monthly_max_all['tsun_daily'] = monthly_max_all['tsun'] / pd.Series(days_in_month)
+        monthly_min_all['tsun_daily'] = monthly_min_all['tsun'] / pd.Series(days_in_month)
 
 
     # Calculate average daily sunshine (hours per day)
@@ -169,8 +141,8 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
         'tavg': 'Average Temperature (°C)',
         'tmin': 'Minimum Temperature (°C)',
         'tmax': 'Maximum Temperature (°C)',
-        'prcp': 'Precipitation (mm/month)',
-        'tsun': 'Average Daily Sunshine (hr/day)',
+        'prcp': 'Precipitation (mm)',
+        'tsun': 'Average Daily Sunshine (min/day)',
         'wspd': 'Wind Speed (km/h)'
     }
 
@@ -204,23 +176,9 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
 #            err_dict['tsun_daily'] = (err_plus, err_minus)
         else:
             # Other variables
-            if var == 'prcp':
-                # Align days with month names
-                days = pd.Series(days_in_month).reindex(monthly_means.index)
-
-                # Convert daily max/min to monthly sums
-                err_plus = (monthly_max_all[var] * days / 1).clip(lower=0) - monthly_means[var]
-                err_minus = monthly_means[var] - (monthly_min_all[var] * days / 1).clip(lower=0)
-                err_dict[var] = (err_plus, err_minus)
-            elif var == 'tsun':
-                # monthly_max_all/min_all tsun are already in same units as monthly_means
-                err_plus = (monthly_max_all['tsun'] - monthly_means['tsun']).clip(lower=0)
-                err_minus = (monthly_means['tsun'] - monthly_min_all['tsun']).clip(lower=0)
-                err_dict['tsun'] = (err_plus, err_minus)
-            else:
-                err_plus = (monthly_max_all[var] - monthly_means[var]).clip(lower=0)
-                err_minus = (monthly_means[var] - monthly_min_all[var]).clip(lower=0)
-                err_dict[var] = (err_plus, err_minus)
+            err_plus = (monthly_max_all[var] - monthly_means[var]).clip(lower=0)
+            err_minus = (monthly_means[var] - monthly_min_all[var]).clip(lower=0)
+            err_dict[var] = (err_plus, err_minus)
 
 
     mode_type = "lines+markers" if show_trends else "markers"
@@ -270,18 +228,7 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
 #                )
             else:
                 # Hover for all other variables
-                if col == 'prcp':
-                    # Convert daily min/max to monthly sums (same as error bars)
-                    days = pd.Series(days_in_month).reindex(monthly_means.index)
-                    err_plus, err_minus = err_dict[col]
-
-                    hover_max = monthly_means[col] + err_plus
-                    hover_min = monthly_means[col] - err_minus
-                else:
-                    hover_min = monthly_min_all[col]
-                    hover_max = monthly_max_all[col]
-
-                trace_kwargs['customdata'] = list(zip(hover_min, hover_max))
+                trace_kwargs['customdata'] = list(zip(monthly_min_all[col], monthly_max_all[col]))
                 trace_kwargs['hovertemplate'] = (
                     f"<b>%{{x}}</b><br>{label}<br>"
                     "Avg: %{y:.2f}<br>"
@@ -325,21 +272,6 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
 
         if show_errorbars and var in err_dict:
             err_plus, err_minus = err_dict[var]
-            if var == 'prcp':
-                days = pd.Series(days_in_month).reindex(monthly_means.index)
-                hover_min = (monthly_min_all[var] * days)
-                hover_max = (monthly_max_all[var] * days)
-            elif var == 'tavg':
-                hover_min = monthly_min_all['tmin']
-                hover_max = monthly_max_all['tmax']
-            elif var == 'tsun':
-                days = pd.Series(days_in_month).reindex(monthly_means.index)
-                hover_min = monthly_min_all['tsun'] / days
-                hover_max = monthly_max_all['tsun'] / days
-            else:
-                hover_min = monthly_min_all[var]
-                hover_max = monthly_max_all[var]
-
             individual_figs[var].update_traces(
                 error_y=dict(
                     type='data',
@@ -347,7 +279,10 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
                     arrayminus=err_minus.values,
                     visible=True
                 ),
-                customdata=list(zip(hover_min, hover_max)),
+                customdata=list(zip(
+                    monthly_min_all['tmin'] if var == 'tavg' else monthly_min_all[var],
+                    monthly_max_all['tmax'] if var == 'tavg' else monthly_max_all[var]
+                )),
                 hovertemplate=(
                     f"<b>%{{x}}</b><br>{label}<br>"
                     "Avg: %{y:.2f}<br>"
@@ -358,32 +293,14 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
 
             # If this is the average temperature plot and error arrays are available, add error bars
             if var == 'tavg' and err_plus is not None and err_minus is not None:
-                if var == 'prcp':
-                    days = pd.Series(days_in_month).reindex(monthly_means.index)
-                    err_plus, err_minus = err_dict[col]
-
-                    hover_max = monthly_means[col] + err_plus
-                    hover_min = monthly_means[col] - err_minus
-                elif var == 'tavg':
-                    hover_min = monthly_min_all['tmin']
-                    hover_max = monthly_max_all['tmax']
-                else:
-                    hover_min = monthly_min_all[var]
-                    hover_max = monthly_max_all[var]
-
                 individual_figs[var].update_traces(
-                    error_y=dict(
-                        type='data',
-                        array=err_plus.values,
-                        arrayminus=err_minus.values,
-                        visible=True
-                    ),
-                    customdata=list(zip(hover_min, hover_max)),
+                    error_y=dict(type='data', array=err_plus, arrayminus=err_minus, visible=True),
+                    customdata=list(zip(monthly_min, monthly_max)),
                     hovertemplate=(
-                        f"<b>%{{x}}</b><br>{label}<br>"
-                        "Avg: %{y:.2f}<br>"
-                        "Min: %{customdata[0]:.2f}<br>"
-                        "Max: %{customdata[1]:.2f}"
+                        "<b>%{x}</b><br>"
+                        "Avg: %{y:.2f} °C<br>"
+                        "Min: %{customdata[0]:.2f} °C<br>"
+                        "Max: %{customdata[1]:.2f} °C"
                     )
                 )
 
@@ -415,16 +332,10 @@ def build_monthly_series_from_daily(daily_df, var='tavg'):
     """
     if var not in daily_df.columns:
         return pd.Series(dtype=float)
-
-    if var == 'tsun':
-        # Values are monthly totals in minutes — divide by days in month then 60 for hrs/day
-        monthly_sum = daily_df[var].resample('M').mean()
-        monthly = monthly_sum / monthly_sum.index.days_in_month / 60
-        #st.write(f"tsun forecast input sample: {monthly.dropna().head(6).tolist()}")  # DEBUGGING 
-    else:
-        monthly = daily_df[var].resample('M').mean()
-
-    monthly = monthly.sort_index().dropna()
+    monthly = daily_df[var].resample('M').mean()
+    monthly = monthly.sort_index()
+    # drop months with NaN (Prophet requires no missing ds/y pairs)
+    monthly = monthly.dropna()
     monthly.index = pd.to_datetime(monthly.index)
     return monthly
 
@@ -582,8 +493,8 @@ yearly_variable = st.sidebar.selectbox(
         "Average Temperature (°C)",
         "Minimum Temperature (°C)",
         "Maximum Temperature (°C)",
-        "Precipitation (mm/month)",
-        "Average Daily Sunshine (hr/day)",
+        "Precipitation (mm)",
+        "Average Daily Sunshine (min/day)",
         "Wind Speed (km/h)"
     ]
 )
@@ -604,8 +515,8 @@ yearly_var_map = {
     "Average Temperature (°C)": "tavg",
     "Minimum Temperature (°C)": "tmin",
     "Maximum Temperature (°C)": "tmax",
-    "Precipitation (mm/month)": "prcp",
-    "Average Daily Sunshine (hr/day)": "tsun",
+    "Precipitation (mm)": "prcp",
+    "Average Daily Sunshine (min/day)": "tsun",
     "Wind Speed (km/h)": "wspd"
 }
 
@@ -639,9 +550,6 @@ if st.sidebar.button("Run Analysis"):
         for m in range(1, 12 + 1):
             df_m = year_month_df.xs(m, level='month_num')[yearly_var_map[yearly_variable]].reset_index()
             df_m.columns = ['Year', yearly_variable]
-            # Convert tsun from seconds/day to hours/day
-            if yearly_var_map[yearly_variable] == 'tsun':
-                df_m[yearly_variable] = df_m[yearly_variable] / 60
             monthly_yearly[m] = df_m
 
         selected_var = yearly_var_map[yearly_variable]
@@ -657,8 +565,8 @@ if st.sidebar.button("Run Analysis"):
                 'tavg': 'Average Temp. (°C)',
                 'tmin': 'Min Temp. (°C)',
                 'tmax': 'Max Temp. (°C)',
-                'prcp': 'Precipitation (mm/month)',
-                'tsun': 'Sunshine (hr/day)',
+                'prcp': 'Precipitation (mm)',
+                'tsun': 'Sunshine (min/day)',
                 'wspd': 'Wind Speed (km/h)'
             }
 
@@ -698,10 +606,6 @@ if st.sidebar.button("Run Analysis"):
                         # Compute yearly min/max for the selected variable
                         yearly_min = data.groupby(['year', 'month_num'])[selected_var].min().reset_index()
                         yearly_max = data.groupby(['year', 'month_num'])[selected_var].max().reset_index()
-                        # Convert tsun from seconds/day to hours/day
-                        if selected_var == 'tsun':
-                            yearly_min[selected_var] = yearly_min[selected_var] / 60
-                            yearly_max[selected_var] = yearly_max[selected_var] / 60
 
                         # Extract min/max for this month
                         df_min = yearly_min[yearly_min['month_num'] == m]
@@ -772,8 +676,8 @@ if st.sidebar.button("Run Analysis"):
                 "Average Temperature (°C)": "tavg",
                 "Minimum Temperature (°C)": "tmin",
                 "Maximum Temperature (°C)": "tmax",
-                "Precipitation (mm/month)": "prcp",
-                "Average Daily Sunshine (hr/day)": "tsun",
+                "Precipitation (mm)": "prcp",
+                "Average Daily Sunshine (min/day)": "tsun",
                 "Wind Speed (km/h)": "wspd"
             }
 
@@ -911,8 +815,8 @@ if st.sidebar.button("Run Analysis"):
                     'average temp': 'Average Temp. (°C)',
                     'min temp': 'Min Temp. (°C)',
                     'max temp': 'Max Temp. (°C)',
-                    'precipitation': 'Precipitation (mm/month)',
-                    'sunshine': 'Sunshine (hr/day)',
+                    'precipitation': 'Precipitation (mm)',
+                    'sunshine': 'Sunshine(min/day)',
                     'wind speed': 'Wind Speed (km/h)'
                 })
 
@@ -944,25 +848,10 @@ st.markdown(
 )
 
 
-
-
 #   cd /Users/cam/Documents/python/weather_app
 #   streamlit run avg_weather_app.py
 
 #   streamlit run /Users/cam/Documents/python/weather_app/avg_weather_app.py
-
-
-
-## ------------------------ push to gh --------------------------------------------
-
-
-#cd /Users/cam/Documents/python/weather_app
-#git add .
-#git status
-#git commit -m "..................."
-#git push 
-
-
 
 
 #   cd /Users/cam/Documents/python/weather_app
