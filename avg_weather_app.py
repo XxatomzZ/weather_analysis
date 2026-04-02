@@ -53,6 +53,8 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
     # Fetch daily data
     data = Daily(loc, start, end)
     data = data.fetch()
+    st.write("tsun sample:", data['tsun'].dropna().head(10) if 'tsun' in data.columns else "column missing")
+    st.write("tsun non-null count:", data['tsun'].notna().sum() if 'tsun' in data.columns else 0)
     # Replace zero precipitation with NaN (meteostat fills missing prcp as 0)
     data['prcp'] = data['prcp'].replace(0, float('nan'))
     data['tsun'] = data['tsun'].replace(0, float('nan'))
