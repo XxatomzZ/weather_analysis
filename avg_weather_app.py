@@ -15,7 +15,6 @@ import re
 from prophet import Prophet
 #from prophet.serialize import model_to_json, model_from_json
 
-
 # Color map for variables
 color_map = {
     'tavg': 'green',
@@ -62,7 +61,11 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
     # Process data
     data.index = pd.to_datetime(data.index)
     data['month'] = data.index.month
+
+    monthly_means_sum = data.groupby('month')[['prcp']].sum(numeric_only=True)
     monthly_means = data.groupby('month').mean(numeric_only=True)
+    monthly_means['prcp'] = monthly_means_sum['prcp']
+
     monthly_means.index = monthly_means.index.map({
         1:'Jan', 2:'Feb', 3:'Mar', 4:'Apr', 5:'May', 6:'Jun',
         7:'Jul', 8:'Aug', 9:'Sep', 10:'Oct', 11:'Nov', 12:'Dec'
@@ -71,6 +74,10 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
     # Monthly max/min for all variables
     monthly_max_all = data.groupby(data.index.month).max(numeric_only=True)
     monthly_min_all = data.groupby(data.index.month).min(numeric_only=True)
+    # Override prcp with monthly totals (sum per year-month, then take max/min across years)
+    prcp_monthly_totals = data.groupby([data.index.year, data.index.month])['prcp'].sum()
+    monthly_max_all['prcp'] = prcp_monthly_totals.groupby(level=1).max()
+    monthly_min_all['prcp'] = prcp_monthly_totals.groupby(level=1).min()
 
     # Map numeric months to names
     month_map = {1: 'Jan', 2: 'Feb', 3: 'Mar', 4: 'Apr', 5: 'May', 6: 'Jun', 7: 'Jul', 8: 'Aug', 9: 'Sep', 10: 'Oct',
@@ -113,6 +120,10 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
     # --- Compute monthly extremes (max/min) for all variables ---
     monthly_max_all = data.groupby(data.index.month).max(numeric_only=True)
     monthly_min_all = data.groupby(data.index.month).min(numeric_only=True)
+    # Override prcp with monthly totals (sum per year-month, then take max/min across years)
+    prcp_monthly_totals = data.groupby([data.index.year, data.index.month])['prcp'].sum()
+    monthly_max_all['prcp'] = prcp_monthly_totals.groupby(level=1).max()
+    monthly_min_all['prcp'] = prcp_monthly_totals.groupby(level=1).min()
 
     # Convert numeric-month index to month names
     month_map = {
@@ -141,7 +152,7 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
         'tavg': 'Average Temperature (°C)',
         'tmin': 'Minimum Temperature (°C)',
         'tmax': 'Maximum Temperature (°C)',
-        'prcp': 'Precipitation (mm)',
+        'prcp': 'Precipitation (mm/month)',
         'tsun': 'Average Daily Sunshine (min/day)',
         'wspd': 'Wind Speed (km/h)'
     }
@@ -493,7 +504,7 @@ yearly_variable = st.sidebar.selectbox(
         "Average Temperature (°C)",
         "Minimum Temperature (°C)",
         "Maximum Temperature (°C)",
-        "Precipitation (mm)",
+        "Precipitation (mm/month)",
         "Average Daily Sunshine (min/day)",
         "Wind Speed (km/h)"
     ]
@@ -515,7 +526,7 @@ yearly_var_map = {
     "Average Temperature (°C)": "tavg",
     "Minimum Temperature (°C)": "tmin",
     "Maximum Temperature (°C)": "tmax",
-    "Precipitation (mm)": "prcp",
+    "Precipitation (mm/month)": "prcp",
     "Average Daily Sunshine (min/day)": "tsun",
     "Wind Speed (km/h)": "wspd"
 }
@@ -544,6 +555,8 @@ if st.sidebar.button("Run Analysis"):
 
         # Prepare dataframe: rows = years, columns = months
         year_month_df = data.groupby(['year', 'month_num']).mean(numeric_only=True)
+        prcp_monthly = data.groupby(['year', 'month_num'])['prcp'].sum()
+        year_month_df['prcp'] = prcp_monthly
 
         # Convert to an easier structure: dict of month → dataframe
         monthly_yearly = {}
@@ -565,7 +578,7 @@ if st.sidebar.button("Run Analysis"):
                 'tavg': 'Average Temp. (°C)',
                 'tmin': 'Min Temp. (°C)',
                 'tmax': 'Max Temp. (°C)',
-                'prcp': 'Precipitation (mm)',
+                'prcp': 'Precipitation (mm/month)',
                 'tsun': 'Sunshine (min/day)',
                 'wspd': 'Wind Speed (km/h)'
             }
@@ -604,8 +617,12 @@ if st.sidebar.button("Run Analysis"):
                     # ----- YEARLY ERROR BARS (inside for-loop, per month) -----
                     if show_errorbars:
                         # Compute yearly min/max for the selected variable
-                        yearly_min = data.groupby(['year', 'month_num'])[selected_var].min().reset_index()
-                        yearly_max = data.groupby(['year', 'month_num'])[selected_var].max().reset_index()
+                        if selected_var == 'prcp':
+                            yearly_min = data.groupby(['year', 'month_num'])[selected_var].sum().reset_index()
+                            yearly_max = data.groupby(['year', 'month_num'])[selected_var].sum().reset_index()
+                        else:
+                            yearly_min = data.groupby(['year', 'month_num'])[selected_var].min().reset_index()
+                            yearly_max = data.groupby(['year', 'month_num'])[selected_var].max().reset_index()
 
                         # Extract min/max for this month
                         df_min = yearly_min[yearly_min['month_num'] == m]
@@ -676,7 +693,7 @@ if st.sidebar.button("Run Analysis"):
                 "Average Temperature (°C)": "tavg",
                 "Minimum Temperature (°C)": "tmin",
                 "Maximum Temperature (°C)": "tmax",
-                "Precipitation (mm)": "prcp",
+                "Precipitation (mm/month)": "prcp",
                 "Average Daily Sunshine (min/day)": "tsun",
                 "Wind Speed (km/h)": "wspd"
             }
@@ -815,7 +832,7 @@ if st.sidebar.button("Run Analysis"):
                     'average temp': 'Average Temp. (°C)',
                     'min temp': 'Min Temp. (°C)',
                     'max temp': 'Max Temp. (°C)',
-                    'precipitation': 'Precipitation (mm)',
+                    'precipitation': 'Precipitation (mm/month)',
                     'sunshine': 'Sunshine(min/day)',
                     'wind speed': 'Wind Speed (km/h)'
                 })
