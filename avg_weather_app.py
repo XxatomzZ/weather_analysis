@@ -157,18 +157,26 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
     # --- Compute monthly extremes (max/min) for all variables ---
     monthly_max_all = data.groupby(data.index.month).max(numeric_only=True)
     monthly_min_all = data.groupby(data.index.month).min(numeric_only=True)
-    # Override prcp with monthly totals (sum per year-month, then take max/min across years)
-    prcp_monthly_totals = data.groupby([data.index.year, data.index.month])['prcp'].sum()
-    monthly_max_all['prcp'] = prcp_monthly_totals.groupby(level=1).max()
-    monthly_min_all['prcp'] = prcp_monthly_totals.groupby(level=1).min()
 
-    # Convert numeric-month index to month names
+    # Override prcp with monthly totals (sum per year-month, then take max/min across years)
+    # This ensures error bars show wettest/driest whole month, not single day extremes
+    prcp_monthly_totals = data.groupby([data.index.year, data.index.month])['prcp'].sum(min_count=1)
+    prcp_max_by_month = prcp_monthly_totals.groupby(level=1).max()
+    prcp_min_by_month = prcp_monthly_totals.groupby(level=1).min()
+
+    # Convert numeric-month index to month names BEFORE assigning back
     month_map = {
         1: 'Jan', 2: 'Feb', 3: 'Mar', 4: 'Apr', 5: 'May', 6: 'Jun',
         7: 'Jul', 8: 'Aug', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dec'
     }
     monthly_max_all.index = monthly_max_all.index.map(month_map)
     monthly_min_all.index = monthly_min_all.index.map(month_map)
+
+    # Map prcp_max/min indices to month names then assign
+    prcp_max_by_month.index = prcp_max_by_month.index.map(month_map)
+    prcp_min_by_month.index = prcp_min_by_month.index.map(month_map)
+    monthly_max_all['prcp'] = prcp_max_by_month
+    monthly_min_all['prcp'] = prcp_min_by_month
 
     # Compute monthly min/max daily sunshine
     if 'tsun' in monthly_max_all.columns and 'tsun' in monthly_min_all.columns:
