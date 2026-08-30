@@ -26,7 +26,7 @@ color_map = {
 }
 
 # additional source for sunshine data
-def fetch_openmeteo_sunshine(lat, lon, start_year, end_year):
+def fetch_openmeteo_sunshine(lat, lon, start_date, end_date):
     """
     Fetch daily sunshine duration from Open-Meteo archive API.
     Returns a pandas Series with DatetimeIndex, values in minutes/day.
@@ -35,11 +35,12 @@ def fetch_openmeteo_sunshine(lat, lon, start_year, end_year):
     params = {
         "latitude": lat,
         "longitude": lon,
-        "start_date": f"{start_year}-01-01",
-        "end_date": f"{end_year}-12-31",
+        "start_date": start_date.strftime("%Y-%m-%d"),
+        "end_date": end_date.strftime("%Y-%m-%d"),
         "daily": "sunshine_duration",
         "timezone": "Europe/London"
     }
+
     try:
         r = requests.get(url, params=params, timeout=15)
         r.raise_for_status()
@@ -69,7 +70,12 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
     # Define location and date range
     loc = Point(lat, long)
     start = datetime(start_year, 1, 1)
-    end = datetime(end_year, 12, 31)
+    today = datetime.now()
+    # If analysing the current year, only fetch data up to today
+    if end_year >= today.year:
+        end = today
+    else:
+        end = datetime(end_year, 12, 31)
 
     # Add number of days in each month (non-leap year assumption)
     days_in_month = {
@@ -89,7 +95,7 @@ def get_weather_data(postcode, start_year, end_year, show_trends=False, show_err
         return None, None
     
     # Replace meteostat tsun (unreliable) with Open-Meteo sunshine duration
-    sunshine_series = fetch_openmeteo_sunshine(lat, long, start_year, end_year)
+    sunshine_series = fetch_openmeteo_sunshine(lat, long, start, end)
     if not sunshine_series.empty:
         sunshine_series.index = pd.to_datetime(sunshine_series.index)
         # Align to meteostat data index
@@ -525,7 +531,9 @@ st.set_page_config(
 st.title("UK Weather Pattern Analysis")
 st.subheader("Analyse average monthly weather by postcode")
 st.markdown("---")  # Horizontal divider line
-st.caption("Data from Meteostat (2005–2025)")
+
+current_year = datetime.now().year
+st.caption(f"Data from Meteostat (2005-{current_year})")
 st.caption("Note: data may be unavailable for some regions/years")
 
 tab1, tab2, tab3, tab4 = st.tabs(["Charts", "Data Table", "Yearly Trends", "Forecast"])
@@ -533,6 +541,7 @@ tab1, tab2, tab3, tab4 = st.tabs(["Charts", "Data Table", "Yearly Trends", "Fore
 st.sidebar.header("Settings ⚙️")
 
 postcode = st.sidebar.text_input("Enter a UK Postcode", "---- ---")
+
 if postcode:
     if not re.match(r"^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$", postcode, re.I):
         st.error("Invalid UK postcode")
@@ -540,8 +549,8 @@ if postcode:
 year_range = st.sidebar.slider(
     "Select range of years to analyse",
     min_value=2005,
-    max_value=2025,
-    value=(2015, 2025),  # default range
+    max_value=current_year,
+    value=(2015, current_year),
     step=1,
     help="Select start and end year for historical data"
 )
