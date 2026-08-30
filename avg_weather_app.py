@@ -422,10 +422,42 @@ def fit_and_forecast_prophet(monthly_series, periods=12, yearly_seasonality=True
     if df.empty:
         return pd.DataFrame(), None
 
-    m = Prophet(yearly_seasonality=yearly_seasonality, weekly_seasonality=False, daily_seasonality=False)
+    m = Prophet(
+    yearly_seasonality=yearly_seasonality,
+    weekly_seasonality=False,
+    daily_seasonality=False
+    )
+
     m.fit(df)
 
-    future = m.make_future_dataframe(periods=periods, freq='M')
+
+    # --------------------------------------------------
+    # Forecast from September 2026 for the user-selected
+    # number of months
+    # --------------------------------------------------
+
+    forecast_start = pd.Timestamp("2026-09-30")
+
+    # Generate enough future dates to reach the required
+    # forecast horizon
+    last_historical_date = pd.to_datetime(df['ds'].max())
+
+    months_until_start = (
+        (forecast_start.year - last_historical_date.year) * 12
+        + forecast_start.month
+        - last_historical_date.month
+    )
+
+    # Generate enough months to:
+    # 1. reach September 2026
+    # 2. continue for the selected forecast horizon
+    total_periods = months_until_start + periods
+
+    future = m.make_future_dataframe(
+        periods=total_periods,
+        freq='M'
+    )
+
     fcst = m.predict(future)
 
     # Return forecast df and the fitted model
@@ -444,12 +476,9 @@ def plot_prophet_forecast(monthly_series, fcst_df, var_label="Average Temperatur
     today = pd.Timestamp.today()
 
     # First day of next month
-    forecast_start = (
-        today.replace(day=1)
-        + pd.DateOffset(months=1)
-    )
+    # Force displayed forecast to start in September 2026
+    forecast_start = pd.Timestamp("2026-09-01")
 
-    # Keep only forecast rows from next month onwards
     forecast_mask = fcst_df['ds'] >= forecast_start
 
     f_med = fcst_df.loc[forecast_mask]
