@@ -440,14 +440,18 @@ def plot_prophet_forecast(monthly_series, fcst_df, var_label="Average Temperatur
     fcst_df = fcst_df.copy()
     fcst_df['ds'] = pd.to_datetime(fcst_df['ds'])
 
-    # find last historical date
-    if monthly_series is not None and not monthly_series.empty:
-        last_hist = pd.to_datetime(monthly_series.index.max())
-    else:
-        last_hist = fcst_df['ds'].min() - pd.DateOffset(days=1)
+    # Force forecast display to begin after the current month
+    today = pd.Timestamp.today()
 
-    # Keep only forecast rows (ds > last_hist)
-    forecast_mask = fcst_df['ds'] > last_hist
+    # First day of next month
+    forecast_start = (
+        today.replace(day=1)
+        + pd.DateOffset(months=1)
+    )
+
+    # Keep only forecast rows from next month onwards
+    forecast_mask = fcst_df['ds'] >= forecast_start
+
     f_med = fcst_df.loc[forecast_mask]
     f_all = fcst_df.loc[forecast_mask].copy()
 
@@ -921,7 +925,7 @@ st.markdown(
     """
     <hr>
     <p style='text-align: center; font-size: 14px; color: grey;'>
-    © 2025 | Data sourced via Meteostat API
+    © 2026 | Data sourced via Meteostat API
     </p>
     """,
     unsafe_allow_html=True
