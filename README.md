@@ -1,25 +1,11 @@
-# 🌦️ UK Weather Analysis App
+# UK Weather Analysis App
 
-This Streamlit app provides a climatology analysis (temperature, precipitation, wind, etc.) for any UK postcode, for up to 20 years prior.
+This app was built using streamlit api, and allows a user to generate weather data for any UK postcode. It provides plots and datatables of past weather data (up to 20 years in the past), trends across those years, and a forecast for up to 24 months in the future. 
 
-## 🚀 Features
-- Input any UK postcode
-- Automatically fetches coordinates using the postcodes.io API
-- Collects 5-20 years of weather data using the Meteostat API
-- Displays monthly averages and 3×2 weather plots
-- Download results as CSV or PNG
-
-## 🧭 How to Use
-1. Go to the hosted app: (********)
+## How to Use
+1. Go to (https://weatherfinder.uk)
 2. Enter a UK postcode
 3. Choose how many years of data to include
-4. View the charts and download results
+4. Adjust settings for trends and forecast as desired
+5. Click 'Run Analysis' to view the charts and tables, and download results
 
-## 🧰 Local Setup (for developers)
-To run locally:
-
-```bash
-git clone https://github.com/yourusername/weather-app.git
-cd weather-app
-pip install -r requirements.txt
-streamlit run app.py
