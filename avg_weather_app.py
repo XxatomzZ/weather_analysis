@@ -959,26 +959,3 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
-
-#   cd /Users/cam/Documents/python/weather_app
-#   streamlit run avg_weather_app.py
-
-#   streamlit run /Users/cam/Documents/python/weather_app/avg_weather_app.py
-
-
-#   cd /Users/cam/Documents/python/weather_app
-#   streamlit run avg_weather_app.py
-
-#   streamlit run /Users/cam/Documents/python/weather_app/avg_weather_app.py
-
-
-
-## ------------------------ push to gh --------------------------------------------
-
-
-#cd /Users/cam/Documents/python/weather_app
-#git add .
-#git status
-#git commit -m "..................."
-#git push 
